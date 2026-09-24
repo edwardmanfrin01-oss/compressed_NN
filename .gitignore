@@ -1,0 +1,23 @@
+# Dataset and results
+/data/
+/output/
+/runs/
+/tmp/
+
+# Repository of the compression algorithm, excluded because it is managed separately
+/gdcompress/
+
+# Compiled rust files
+**/target/
+
+# Python environment
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Local and secret configurations
+.env
+.env.*
+!.env.example

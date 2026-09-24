@@ -1,0 +1,2 @@
+Repository: https://github.com/Voggo/gdcompress
+Commit: 8927486e4ab16a33ab872fe1e530514653a01b4d
