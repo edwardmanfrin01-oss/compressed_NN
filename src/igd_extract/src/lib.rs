@@ -28,6 +28,97 @@ fn bit_string(bits: &BitSlice<usize, Lsb0>) -> String {
     bits.iter().map(|b| if *b { '1' } else { '0' }).collect()
 }
 
+/// Compare equal-width binary strings as unsigned integers. The first character
+/// is the most-significant bit of the experimental base-value convention.
+fn compare_binary(left: &str, right: &str) -> std::cmp::Ordering {
+    debug_assert_eq!(left.len(), right.len());
+    left.as_bytes().cmp(right.as_bytes())
+}
+
+/// `left - right`, for equal-width unsigned binary strings where `left >= right`.
+/// Leading zeroes are kept so a delta has the same bit width as its base.
+fn subtract_binary(left: &str, right: &str) -> Result<String> {
+    if left.len() != right.len() || compare_binary(left, right).is_lt() {
+        return Err(invalid(
+            "Sottrazione binaria non valida per le basi ordinate.",
+        ));
+    }
+    let mut result = vec![b'0'; left.len()];
+    let mut borrow = 0u8;
+    for index in (0..left.len()).rev() {
+        let lhs = left.as_bytes()[index]
+            .checked_sub(b'0')
+            .filter(|bit| *bit <= 1)
+            .ok_or_else(|| invalid("Bit non binario in una base."))?;
+        let rhs = right.as_bytes()[index]
+            .checked_sub(b'0')
+            .filter(|bit| *bit <= 1)
+            .ok_or_else(|| invalid("Bit non binario in una base."))?;
+        let subtrahend = rhs + borrow;
+        if lhs >= subtrahend {
+            result[index] = b'0' + (lhs - subtrahend);
+            borrow = 0;
+        } else {
+            result[index] = b'0' + (lhs + 2 - subtrahend);
+            borrow = 1;
+        }
+    }
+    if borrow != 0 {
+        return Err(invalid("Prestito residuo nella sottrazione binaria."));
+    }
+    String::from_utf8(result).map_err(Into::into)
+}
+
+fn add_one_binary(bits: &str) -> Result<String> {
+    let mut result = bits.as_bytes().to_vec();
+    let mut carry = 1u8;
+    for value in result.iter_mut().rev() {
+        let bit = value
+            .checked_sub(b'0')
+            .filter(|bit| *bit <= 1)
+            .ok_or_else(|| invalid("Bit non binario in un delta."))?;
+        let sum = bit + carry;
+        *value = b'0' + (sum & 1);
+        carry = sum >> 1;
+        if carry == 0 {
+            break;
+        }
+    }
+    if carry == 1 {
+        result.insert(0, b'1');
+    }
+    String::from_utf8(result).map_err(Into::into)
+}
+
+/// Approximate `log2(value)` from an arbitrarily long unsigned binary string.
+/// The original integer remains in the JSON as `delta_bits`; this is only the
+/// bounded f64 channel supplied to a neural network.
+fn binary_log2(bits: &str) -> Result<f64> {
+    let significant = bits.trim_start_matches('0');
+    if significant.is_empty() {
+        return Ok(f64::NEG_INFINITY);
+    }
+    let prefix_len = significant.len().min(53);
+    let mut prefix = 0u64;
+    for byte in significant.bytes().take(prefix_len) {
+        if !matches!(byte, b'0' | b'1') {
+            return Err(invalid("Bit non binario in un delta."));
+        }
+        prefix = (prefix << 1) | u64::from(byte == b'1');
+    }
+    let mantissa = prefix as f64 / 2f64.powi((prefix_len - 1) as i32);
+    Ok((significant.len() - 1) as f64 + mantissa.log2())
+}
+
+fn matrix<T: Clone>(values: &[T], width: usize, height: usize) -> Result<Vec<Vec<T>>> {
+    if values.len() != width.saturating_mul(height) {
+        return Err(invalid(
+            "Lunghezza della mappa diversa dalla griglia dell'immagine.",
+        ));
+    }
+    Ok(values.chunks(width).map(|row| row.to_vec()).collect())
+}
+
 fn feature_transform(transform: FeatureTransform) -> Value {
     match transform {
         FeatureTransform::None => json!({"kind": "none"}),
@@ -272,6 +363,167 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
         document["sample_deviation_bits"] = Value::Null;
     }
     Ok(document)
+}
+
+/// Produce the first neural-network representation directly from an IGD file.
+///
+/// The dictionary is sorted by its fixed-width base-bit string. This defines an
+/// experimental unsigned-integer ordering without converting long bases to a
+/// lossy machine integer. Every spatial sample then receives its new rank and
+/// the delta attached to that rank.
+pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> {
+    // This is intentionally an in-memory conversion: no generic JSON is written
+    // to disk before the smaller, experiment-specific document is produced.
+    let extracted = extract(bytes, source, options)?;
+    let base_bits = extracted["base_bits"]
+        .as_u64()
+        .ok_or_else(|| invalid("base_bits mancante."))? as usize;
+    let num_bases = extracted["num_bases"]
+        .as_u64()
+        .ok_or_else(|| invalid("num_bases mancante."))? as usize;
+    let grid_width = extracted["image"]["grid_width"]
+        .as_u64()
+        .ok_or_else(|| invalid("grid_width mancante."))? as usize;
+    let grid_height = extracted["image"]["grid_height"]
+        .as_u64()
+        .ok_or_else(|| invalid("grid_height mancante."))? as usize;
+    let raw_bases = extracted["bases"]
+        .as_array()
+        .ok_or_else(|| invalid("Dizionario delle basi mancante."))?;
+    if raw_bases.len() != num_bases || num_bases == 0 {
+        return Err(invalid("Numero di basi non valido."));
+    }
+
+    let mut ordered: Vec<(usize, String, usize)> = Vec::with_capacity(num_bases);
+    for base in raw_bases {
+        let old_id = base["id"]
+            .as_u64()
+            .ok_or_else(|| invalid("ID originale mancante."))? as usize;
+        let bits = base["bits"]
+            .as_str()
+            .ok_or_else(|| invalid("Bit della base mancanti."))?
+            .to_owned();
+        let frequency = base["frequency"]
+            .as_u64()
+            .ok_or_else(|| invalid("Frequenza della base mancante."))?
+            as usize;
+        if old_id >= num_bases
+            || bits.len() != base_bits
+            || !bits.bytes().all(|b| matches!(b, b'0' | b'1'))
+        {
+            return Err(invalid("Base non valida nel dizionario."));
+        }
+        ordered.push((old_id, bits, frequency));
+    }
+    ordered.sort_by(|left, right| compare_binary(&left.1, &right.1));
+    if ordered.windows(2).any(|pair| pair[0].1 == pair[1].1) {
+        return Err(invalid("Il dizionario contiene basi duplicate."));
+    }
+
+    let mut old_to_rank = vec![None; num_bases];
+    let mut deltas = Vec::with_capacity(num_bases);
+    let mut sorted_dictionary = Vec::with_capacity(num_bases);
+    for (rank, (old_id, bits, frequency)) in ordered.iter().enumerate() {
+        let slot = old_to_rank
+            .get_mut(*old_id)
+            .ok_or_else(|| invalid("ID originale fuori intervallo."))?;
+        if slot.replace(rank).is_some() {
+            return Err(invalid("ID originale duplicato."));
+        }
+        let delta = if rank == 0 {
+            "0".repeat(base_bits)
+        } else {
+            subtract_binary(bits, &ordered[rank - 1].1)?
+        };
+        deltas.push(delta.clone());
+        sorted_dictionary.push(json!({
+            "rank": rank,
+            "original_id": old_id,
+            "base_bits": bits,
+            "delta_bits": delta,
+            "frequency": frequency
+        }));
+    }
+    let old_ids = extracted["sample_base_ids"]
+        .as_array()
+        .ok_or_else(|| invalid("ID spaziali mancanti."))?;
+    let mut ranks = Vec::with_capacity(old_ids.len());
+    let mut spatial_delta_bits = Vec::with_capacity(old_ids.len());
+    for old_id in old_ids {
+        let old_id = old_id
+            .as_u64()
+            .ok_or_else(|| invalid("ID spaziale non intero."))? as usize;
+        let rank = old_to_rank
+            .get(old_id)
+            .and_then(|value| *value)
+            .ok_or_else(|| invalid("ID spaziale fuori dal dizionario."))?;
+        ranks.push(rank);
+        spatial_delta_bits.push(deltas[rank].clone());
+    }
+    let max_delta = deltas
+        .iter()
+        .max_by(|left, right| compare_binary(left, right))
+        .ok_or_else(|| invalid("Delta mancanti."))?;
+    // `log2(delta + 1)` avoids -infinity for rank zero and preserves a bounded
+    // numeric feature even when bases are wider than f64 can represent exactly.
+    let denominator = binary_log2(&add_one_binary(max_delta)?)?;
+    let delta_normalized: Vec<f64> = spatial_delta_bits
+        .iter()
+        .map(|delta| {
+            let numerator = binary_log2(&add_one_binary(delta)?)?;
+            Ok(if denominator == 0.0 {
+                0.0
+            } else {
+                numerator / denominator
+            })
+        })
+        .collect::<Result<_>>()?;
+    let rank_normalized: Vec<f64> = ranks
+        .iter()
+        .map(|rank| {
+            if num_bases == 1 {
+                0.0
+            } else {
+                *rank as f64 / (num_bases - 1) as f64
+            }
+        })
+        .collect();
+    let frequencies: usize = ordered.iter().map(|(_, _, frequency)| frequency).sum();
+    if frequencies != ranks.len() {
+        return Err(invalid(
+            "Le frequenze del dizionario non coincidono con gli ID spaziali.",
+        ));
+    }
+
+    Ok(json!({
+        "schema": "igd-network-features-v1",
+        "source": extracted["source"].clone(),
+        "image": extracted["image"].clone(),
+        "verification": extracted["verification"].clone(),
+        "representation": {
+            "name": "sorted-base-rank-and-delta-v1",
+            "index_origin": 0,
+            "base_value_bit_width": base_bits,
+            "base_bit_positions": extracted["base_bit_positions"].clone(),
+            "base_order": "Ascending lexicographic order of equal-width binary strings; the leftmost character of base_bits is treated as the most-significant bit.",
+            "delta_order": "delta_bits[0] is zero; delta_bits[r] = base_bits[r] - base_bits[r - 1]. Deltas are tied to dictionary rank, not to adjacent pixels.",
+            "spatial_order": "Row-major: sample i has coordinates y = i // grid_width, x = i % grid_width.",
+            "neural_channels": {
+                "rank_normalized": "spatial_rank_ids / (num_bases - 1); all zero when num_bases is 1.",
+                "delta_log2_normalized": "log2(delta + 1) / log2(max_delta + 1); all zero when max_delta is zero. Exact deltas remain in spatial_delta_bits."
+            }
+        },
+        "num_bases": num_bases,
+        "num_samples": ranks.len(),
+        "base_min_bits": ordered.first().map(|base| base.1.clone()),
+        "base_max_bits": ordered.last().map(|base| base.1.clone()),
+        "max_delta_bits": max_delta,
+        "sorted_dictionary": sorted_dictionary,
+        "spatial_rank_ids": matrix(&ranks, grid_width, grid_height)?,
+        "spatial_delta_bits": matrix(&spatial_delta_bits, grid_width, grid_height)?,
+        "spatial_rank_normalized": matrix(&rank_normalized, grid_width, grid_height)?,
+        "spatial_delta_log2_normalized": matrix(&delta_normalized, grid_width, grid_height)?
+    }))
 }
 
 /// Reassemble one transformed chunk using only the JSON representation.

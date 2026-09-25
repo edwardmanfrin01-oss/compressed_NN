@@ -1,7 +1,7 @@
 use gdcompress::compression::base_bits::BaseBitGroups;
 use gdcompress::prelude::*;
 use gdcompress::{BaseSelectionContext, BitDataSet, IgdFile, PreEncodeContext};
-use igd_extract::{Options, extract, reconstruct_chunk};
+use igd_extract::{Options, extract, extract_network_features, reconstruct_chunk};
 use image::{DynamicImage, Rgb, RgbImage};
 use serde_json::Value;
 
@@ -181,6 +181,78 @@ fn rejects_truncated_input_and_inconsistent_export_mapping() {
     .unwrap();
     document["base_bit_positions"][1] = document["base_bit_positions"][0].clone();
     assert!(reconstruct_chunk(&document, 0).is_err());
+}
+
+#[test]
+fn network_representation_sorts_bases_and_preserves_spatial_dictionary_links() {
+    let (_, context) = fixture(ImageGroupingTransform::Raw, false);
+    let bytes = encode(context.clone(), 1, 2);
+    let raw = extract(bytes.clone(), "fixture.igd", Options::default()).unwrap();
+    let features = extract_network_features(
+        bytes,
+        "fixture.igd",
+        Options {
+            include_deviations: false,
+            verify: true,
+        },
+    )
+    .unwrap();
+    assert_eq!(features["schema"], "igd-network-features-v1");
+    assert_eq!(features["image"]["grid_width"], 4);
+    assert_eq!(features["image"]["grid_height"], 3);
+    assert_eq!(features["verification"]["passed"], true);
+    let dictionary = features["sorted_dictionary"].as_array().unwrap();
+    assert_eq!(
+        dictionary.len(),
+        raw["num_bases"].as_u64().unwrap() as usize
+    );
+    let mut old_to_rank = vec![0usize; dictionary.len()];
+    for (rank, entry) in dictionary.iter().enumerate() {
+        assert_eq!(entry["rank"].as_u64().unwrap() as usize, rank);
+        old_to_rank[entry["original_id"].as_u64().unwrap() as usize] = rank;
+        if rank == 0 {
+            assert!(
+                entry["delta_bits"]
+                    .as_str()
+                    .unwrap()
+                    .bytes()
+                    .all(|bit| bit == b'0')
+            );
+        } else {
+            assert!(
+                entry["base_bits"].as_str().unwrap()
+                    > dictionary[rank - 1]["base_bits"].as_str().unwrap()
+            );
+        }
+    }
+    let ranks: Vec<usize> = features["spatial_rank_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|row| row.as_array().unwrap().iter())
+        .map(|rank| rank.as_u64().unwrap() as usize)
+        .collect();
+    let old_ids: Vec<usize> = raw["sample_base_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|id| id.as_u64().unwrap() as usize)
+        .collect();
+    let expected: Vec<usize> = old_ids.iter().map(|id| old_to_rank[*id]).collect();
+    assert_eq!(ranks, expected);
+    let frequency: u64 = dictionary
+        .iter()
+        .map(|entry| entry["frequency"].as_u64().unwrap())
+        .sum();
+    assert_eq!(frequency, old_ids.len() as u64);
+    let delta_map = features["spatial_delta_bits"].as_array().unwrap();
+    for (sample, delta) in delta_map
+        .iter()
+        .flat_map(|row| row.as_array().unwrap().iter())
+        .enumerate()
+    {
+        assert_eq!(delta, &dictionary[ranks[sample]]["delta_bits"]);
+    }
 }
 
 #[test]
