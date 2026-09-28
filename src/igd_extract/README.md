@@ -9,6 +9,7 @@ esaminata, commit `8927486e4ab16a33ab872fe1e530514653a01b4d`.
 
 Eseguire dalla cartella del progetto `C:\Users\edward\CODING_PROJECTS\AARHUS`:
 
+# this row below shows why the executable of igd_extract is in the gdcompress project folder
 ```powershell
 cargo run --release --locked --manifest-path src/igd_extract/Cargo.toml --target-dir src/gdcompress/target -- data/cifar-10_compressed/image_00000.igd -o output/igd/image_00000.json --verify
 ```
@@ -92,7 +93,24 @@ Campi principali aggiunti dal formato `igd-network-features-v1`:
 
 Con gruppo `1x1`, una immagine 224x224 produce due mappe 224x224, una per
 canale. I file JSON sono destinati a controllo e tracciabilita: per il training
-di tutto il dataset converra poi convertire i due canali in un formato binario.
+di tutto il dataset usare `--network-npz`, che scrive direttamente due canali
+`uint8` senza creare un JSON intermedio:
+
+```powershell
+.\src\gdcompress\target\release\igd_extract.exe data/cifar-10_compressed_pg_1x1/image_00000.igd -o output/network/image_00000.network.npz --network-npz --verify
+```
+
+La conversione in `uint8` viene fatta soltanto dopo la normalizzazione:
+
+```text
+rank_u8  = round(255 * spatial_rank_normalized)
+delta_u8 = round(255 * spatial_delta_log2_normalized)
+```
+
+Il loader di PyTorch riporta approssimativamente i due canali in `[0, 1]` con
+`array.astype(float32) / 255.0`. L'NPZ contiene `rank_u8.npy` e `delta_u8.npy`,
+entrambi di forma `(height, width)`, piu `metadata.json`. Per una immagine
+224x224 i soli tensori occupano esattamente `224 * 224 * 2 = 100352` byte.
 
 Per elaborare il dataset senza mai scrivere il JSON generico intermedio, dalla
 radice del progetto eseguire prima la compressione e poi l'esportazione:
@@ -104,10 +122,15 @@ python src/batch_network_features.py
 
 Il primo script usa `1x1` per default e scrive in
 `data/cifar-10_compressed_pg_1x1`; il secondo legge quella cartella e scrive in
-`output/network_features_pg_1x1`. Entrambi rifiutano di sovrascrivere un file
+`output/network_features_pg_1x1_npz`. Entrambi rifiutano di sovrascrivere un file
 gia presente. Dopo un'interruzione, usare `--resume`. Provare prima su poche
 immagini specificando `--input-dir`, `--output-dir` e, per l'esportatore,
 `--verify`.
+
+In alternativa, `python src/build_1x1_npz_dataset.py` esegue nella stessa
+iterazione PNG -> IGD 1x1 -> NPZ uint8 e conserva l'IGD. Non crea JSON per il
+dataset; usare `--verify` solo per un piccolo campione iniziale e `--resume`
+per riprendere dopo un'interruzione.
 
 ## La mappa che impedisce di mischiare i bit
 

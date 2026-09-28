@@ -5,7 +5,7 @@
 /tmp/
 
 # Repository of the compression algorithm, excluded because it is managed separately
-/gdcompress/
+/src/gdcompress/
 
 # Compiled rust files
 **/target/

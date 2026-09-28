@@ -1,4 +1,6 @@
-"""Compress images one at a time with a reproducible pixel grouping."""
+"""Compress images one at a time with a reproducible pixel grouping.
+   It uses the script from gdcompress project over the whole dataset
+   passed as input."""
 
 from __future__ import annotations
 
@@ -24,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "cifar-10_compressed_pg_1x1",
+        default=PROJECT_ROOT / "data" / "cifar-10_compressed_1x1",
         help="Directory for IGD files; the default is dedicated to the 1x1 experiment.",
     )
     parser.add_argument(

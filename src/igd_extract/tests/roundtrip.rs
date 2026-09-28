@@ -1,7 +1,10 @@
 use gdcompress::compression::base_bits::BaseBitGroups;
 use gdcompress::prelude::*;
 use gdcompress::{BaseSelectionContext, BitDataSet, IgdFile, PreEncodeContext};
-use igd_extract::{Options, extract, extract_network_features, reconstruct_chunk};
+use igd_extract::{
+    Options, extract, extract_network_features, extract_network_u8, reconstruct_chunk,
+    write_network_npz,
+};
 use image::{DynamicImage, Rgb, RgbImage};
 use serde_json::Value;
 
@@ -253,6 +256,67 @@ fn network_representation_sorts_bases_and_preserves_spatial_dictionary_links() {
     {
         assert_eq!(delta, &dictionary[ranks[sample]]["delta_bits"]);
     }
+}
+
+#[test]
+fn network_u8_quantizes_two_maps_and_writes_npz() {
+    let (_, context) = fixture(ImageGroupingTransform::Raw, false);
+    let bytes = encode(context, 2, 2);
+    let features =
+        extract_network_features(bytes.clone(), "fixture.igd", Options::default()).unwrap();
+    let network = extract_network_u8(bytes.clone(), "fixture.igd", Options::default()).unwrap();
+    assert_eq!((network.width, network.height), (4, 3));
+    assert_eq!(network.rank_u8.len(), 12);
+    assert_eq!(network.delta_u8.len(), 12);
+    for ((rank, delta), (rank_u8, delta_u8)) in features["spatial_rank_normalized"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|row| row.as_array().unwrap().iter())
+        .zip(
+            features["spatial_delta_log2_normalized"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|row| row.as_array().unwrap().iter()),
+        )
+        .zip(network.rank_u8.iter().zip(network.delta_u8.iter()))
+    {
+        assert_eq!(*rank_u8, (rank.as_f64().unwrap() * 255.0).round() as u8);
+        assert_eq!(*delta_u8, (delta.as_f64().unwrap() * 255.0).round() as u8);
+    }
+    let folder = std::env::temp_dir().join(format!(
+        "igd-extract-npz-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&folder).unwrap();
+    let output = folder.join("features.npz");
+    let summary = write_network_npz(bytes, "fixture.igd", Options::default(), &output).unwrap();
+    assert_eq!((summary.width, summary.height), (4, 3));
+    assert_eq!(summary.tensor_bytes, 24);
+    let archive = std::fs::read(&output).unwrap();
+    assert!(archive.starts_with(b"PK\x03\x04"));
+    assert!(
+        archive
+            .windows(b"rank_u8.npy".len())
+            .any(|window| window == b"rank_u8.npy")
+    );
+    assert!(
+        archive
+            .windows(b"delta_u8.npy".len())
+            .any(|window| window == b"delta_u8.npy")
+    );
+    assert!(
+        archive
+            .windows(b"metadata.json".len())
+            .any(|window| window == b"metadata.json")
+    );
+    std::fs::remove_file(&output).unwrap();
+    std::fs::remove_dir(&folder).unwrap();
 }
 
 #[test]

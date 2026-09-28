@@ -1,3 +1,4 @@
+"""Test the resize of a single image, from 32x32x3 to 224x224x3"""
 import tarfile
 import pickle
 import io
@@ -14,10 +15,10 @@ OUTPUT_FILE = os.path.join(OUTPUT_DIR, "image_00000.png")
 
 with tarfile.open(DATASET_PATH, "r:gz") as tar:
 
-    # Il training set CIFAR-10 è diviso in data_batch_1 ... data_batch_5.
+    # CIFAR-10 training set is divided in data_batch_1 ... data_batch_5.
     member = tar.getmember("cifar-10-batches-py/data_batch_1")
 
-    # Estraiamo il file in memoria, senza scriverlo su disco.
+    # Extract the file from the memory
     file_object = tar.extractfile(member)
 
     if file_object is None:
@@ -26,9 +27,7 @@ with tarfile.open(DATASET_PATH, "r:gz") as tar:
     batch = pickle.load(file_object, encoding="bytes")
 
 
-# ============================================================
-# 2. Recuperiamo la prima immagine
-# ============================================================
+# Get the first image
 
 data = batch[b"data"]
 labels = batch[b"labels"]
@@ -36,31 +35,15 @@ labels = batch[b"labels"]
 image_data = data[0]
 label = labels[0]
 
-print("Informazioni immagine originale:")
+print("Original image:")
 print(f"  Shape array: {image_data.shape}")
 print(f"  Label: {label}")
 
 
-# CIFAR-10 memorizza ogni immagine come:
-#
-# [R R R ... R | G G G ... G | B B B ... B]
-#
-# quindi dobbiamo trasformarla da:
-#
-# (3072,)
-#
-# a:
-#
-# (3, 32, 32)
+# CIFAR-10 images are saved as 1D vector (32x32x3 = 3072 elements)
+# so they must be reshaped in 32x32x3
 
 image_data = image_data.reshape(3, 32, 32)
-
-# PIL invece vuole generalmente:
-# (height, width, channels)
-#
-# quindi:
-# (3, 32, 32) -> (32, 32, 3)
-
 image_data = image_data.transpose(1, 2, 0)
 
 image = Image.fromarray(image_data)
@@ -70,9 +53,7 @@ print(f"  PIL mode: {image.mode}")
 print(f"  PIL size: {image.size}")
 
 
-# ============================================================
-# 3. Resize 32x32 -> 224x224
-# ============================================================
+# Apply the resize 32x32 -> 224x224
 
 resize = transforms.Resize(
     (224, 224)
@@ -81,14 +62,12 @@ resize = transforms.Resize(
 resized_image = resize(image)
 
 
-print("\nInformazioni immagine ridimensionata:")
+print("\nNew Image:")
 print(f"  PIL mode: {resized_image.mode}")
 print(f"  PIL size: {resized_image.size}")
 
 
-# ============================================================
-# 4. Salviamo come PNG lossless
-# ============================================================
+# Save as PNG lossless
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -98,12 +77,10 @@ resized_image.save(
 )
 
 
-# ============================================================
-# 5. Informazioni sul file prodotto
-# ============================================================
+# Final file
 
 file_size = os.path.getsize(OUTPUT_FILE)
 
-print("\nFile salvato:")
+print("\nFile saved:")
 print(f"  Path: {OUTPUT_FILE}")
 print(f"  Size: {file_size:,} bytes")

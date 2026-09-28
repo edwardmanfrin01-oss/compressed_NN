@@ -1,3 +1,5 @@
+"""Resize of images from 32x32x3 to 224x224x3"""
+
 import tarfile
 import pickle
 import os
@@ -8,7 +10,7 @@ from torchvision import transforms
 
 
 DATASET_PATH = "data/cifar-10-python.tar.gz"
-OUTPUT_DIR = "data/resized"
+OUTPUT_DIR = "data/cifar-10_resized"
 LABELS_FILE = "data/resized/labels.json"
 
 BATCH_NAMES = [

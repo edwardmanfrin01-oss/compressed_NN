@@ -1,6 +1,6 @@
-"""Export direct IGD-to-network JSON features one image at a time."""
+"""Export direct IGD-to-network uint8 NPZ features one image at a time."""
 
-from __future__ import annotations
+# from __future__ import annotations
 
 import argparse
 from pathlib import Path
@@ -13,7 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create sorted-rank and delta feature JSON files directly from .igd files."
+        description="Create compact uint8 rank/delta NPZ files directly from .igd files."
     )
     parser.add_argument(
         "--input-dir",
@@ -24,8 +24,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "output" / "network_features_pg_1x1",
-        help="Directory for igd-network-features-v1 JSON files.",
+        default=PROJECT_ROOT / "output" / "network_features_pg_1x1_npz",
+        help="Directory for compact rank_u8/delta_u8 NPZ files.",
     )
     parser.add_argument(
         "--extractor-bin",
@@ -41,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="Skip JSON files already present in the output directory.",
+        help="Skip NPZ files already present in the output directory.",
     )
     return parser.parse_args()
 
@@ -66,7 +66,7 @@ def main() -> None:
     exported = 0
     skipped = 0
     for index, input_path in enumerate(input_files, 1):
-        output_path = args.output_dir / f"{input_path.stem}.network.json"
+        output_path = args.output_dir / f"{input_path.stem}.network.npz"
         if output_path.exists():
             if args.resume:
                 skipped += 1
@@ -77,7 +77,7 @@ def main() -> None:
         command = [
             str(args.extractor_bin),
             str(input_path),
-            "--network-features",
+            "--network-npz",
             "-o",
             str(output_path),
         ]

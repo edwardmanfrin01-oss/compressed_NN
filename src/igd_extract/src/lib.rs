@@ -8,7 +8,9 @@ use gdcompress::compression::encoding::{BaseTable, EncodedData};
 use gdcompress::{BitDataReconstructionInfo, FeatureTransform, IgdFile};
 use serde_json::{Value, json};
 use std::error::Error;
-use std::io;
+use std::fs::OpenOptions;
+use std::io::{self, BufWriter, Write};
+use std::path::Path;
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -18,6 +20,25 @@ pub struct Options {
     /// Reconstruct transformed chunks from the exported representation and compare
     /// every bit with gdcompress's full bit-data decoder before writing the JSON.
     pub verify: bool,
+}
+
+/// The two uint8 channels consumed by the first compressed-domain ResNet.
+/// The data are row-major, with index `y * width + x`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetworkU8 {
+    pub width: usize,
+    pub height: usize,
+    pub rank_u8: Vec<u8>,
+    pub delta_u8: Vec<u8>,
+    pub metadata_json: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NetworkNpzSummary {
+    pub width: usize,
+    pub height: usize,
+    pub tensor_bytes: usize,
+    pub file_bytes: u64,
 }
 
 fn invalid(message: impl Into<String>) -> Box<dyn Error> {
@@ -117,6 +138,153 @@ fn matrix<T: Clone>(values: &[T], width: usize, height: usize) -> Result<Vec<Vec
         ));
     }
     Ok(values.chunks(width).map(|row| row.to_vec()).collect())
+}
+
+/// Quantize a value already normalized in [0, 1] to all 256 uint8 levels.
+/// The inverse used by the training loader is approximately `byte / 255.0`.
+fn quantize_unit(value: f64) -> Result<u8> {
+    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+        return Err(invalid("Valore normalizzato fuori dall'intervallo [0, 1]."));
+    }
+    Ok((value * 255.0).round() as u8)
+}
+
+fn u8_matrix(document: &Value, key: &str, width: usize, height: usize) -> Result<Vec<u8>> {
+    let rows = document[key]
+        .as_array()
+        .ok_or_else(|| invalid(format!("Mappa {key} mancante.")))?;
+    if rows.len() != height {
+        return Err(invalid(format!("Altezza non valida per la mappa {key}.")));
+    }
+    let mut values = Vec::with_capacity(width * height);
+    for row in rows {
+        let row = row
+            .as_array()
+            .ok_or_else(|| invalid(format!("Riga non valida per la mappa {key}.")))?;
+        if row.len() != width {
+            return Err(invalid(format!("Larghezza non valida per la mappa {key}.")));
+        }
+        for value in row {
+            values.push(quantize_unit(value.as_f64().ok_or_else(|| {
+                invalid(format!("Valore non numerico nella mappa {key}."))
+            })?)?);
+        }
+    }
+    Ok(values)
+}
+
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for &byte in bytes {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
+
+fn npy_u8_2d(width: usize, height: usize, values: &[u8]) -> Result<Vec<u8>> {
+    if values.len()
+        != width
+            .checked_mul(height)
+            .ok_or_else(|| invalid("Dimensioni NPY troppo grandi."))?
+    {
+        return Err(invalid(
+            "Lunghezza del canale diversa dalle dimensioni NPY.",
+        ));
+    }
+    let mut header =
+        format!("{{'descr': '|u1', 'fortran_order': False, 'shape': ({height}, {width}), }}")
+            .into_bytes();
+    // NPY v1.0 header: magic(6) + version(2) + length(2) + header must be a multiple of 16.
+    let padding = (16 - ((10 + header.len() + 1) % 16)) % 16;
+    header.extend(std::iter::repeat_n(b' ', padding));
+    header.push(b'\n');
+    let header_len =
+        u16::try_from(header.len()).map_err(|_| invalid("Header NPY troppo lungo."))?;
+    let mut output = Vec::with_capacity(10 + header.len() + values.len());
+    output.extend_from_slice(b"\x93NUMPY");
+    output.extend_from_slice(&[1, 0]);
+    output.extend_from_slice(&header_len.to_le_bytes());
+    output.extend_from_slice(&header);
+    output.extend_from_slice(values);
+    Ok(output)
+}
+
+struct ZipEntry {
+    name: &'static str,
+    bytes: Vec<u8>,
+}
+
+/// Minimal ZIP writer for a standard, uncompressed NumPy `.npz` archive.
+/// NumPy accepts stored ZIP entries, so this adds no dependency or hidden data
+/// conversion. The tensors themselves remain exact uint8 bytes.
+fn write_stored_npz(mut writer: impl Write, entries: Vec<ZipEntry>) -> Result<()> {
+    let mut central = Vec::new();
+    let mut offset = 0u32;
+    let entry_count = u16::try_from(entries.len()).map_err(|_| invalid("Troppe entry NPZ."))?;
+    for entry in entries {
+        let name = entry.name.as_bytes();
+        let size =
+            u32::try_from(entry.bytes.len()).map_err(|_| invalid("Entry NPZ troppo grande."))?;
+        let name_len =
+            u16::try_from(name.len()).map_err(|_| invalid("Nome entry NPZ troppo lungo."))?;
+        let crc = crc32(&entry.bytes);
+        writer.write_all(&0x0403_4B50u32.to_le_bytes())?;
+        writer.write_all(&20u16.to_le_bytes())?;
+        writer.write_all(&0u16.to_le_bytes())?;
+        writer.write_all(&0u16.to_le_bytes())?;
+        writer.write_all(&0u16.to_le_bytes())?;
+        writer.write_all(&0u16.to_le_bytes())?;
+        writer.write_all(&crc.to_le_bytes())?;
+        writer.write_all(&size.to_le_bytes())?;
+        writer.write_all(&size.to_le_bytes())?;
+        writer.write_all(&name_len.to_le_bytes())?;
+        writer.write_all(&0u16.to_le_bytes())?;
+        writer.write_all(name)?;
+        writer.write_all(&entry.bytes)?;
+
+        central.extend_from_slice(&0x0201_4B50u32.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&crc.to_le_bytes());
+        central.extend_from_slice(&size.to_le_bytes());
+        central.extend_from_slice(&size.to_le_bytes());
+        central.extend_from_slice(&name_len.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u32.to_le_bytes());
+        central.extend_from_slice(&offset.to_le_bytes());
+        central.extend_from_slice(name);
+
+        offset = offset
+            .checked_add(30 + u32::from(name_len) + size)
+            .ok_or_else(|| invalid("Overflow dimensione archivio NPZ."))?;
+    }
+    let central_offset = offset;
+    let central_size =
+        u32::try_from(central.len()).map_err(|_| invalid("Indice NPZ troppo grande."))?;
+    writer.write_all(&central)?;
+    writer.write_all(&0x0605_4B50u32.to_le_bytes())?;
+    writer.write_all(&0u16.to_le_bytes())?;
+    writer.write_all(&0u16.to_le_bytes())?;
+    writer.write_all(&entry_count.to_le_bytes())?;
+    writer.write_all(&entry_count.to_le_bytes())?;
+    writer.write_all(&central_size.to_le_bytes())?;
+    writer.write_all(&central_offset.to_le_bytes())?;
+    writer.write_all(&0u16.to_le_bytes())?;
+    Ok(())
 }
 
 fn feature_transform(transform: FeatureTransform) -> Value {
@@ -524,6 +692,97 @@ pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) 
         "spatial_rank_normalized": matrix(&rank_normalized, grid_width, grid_height)?,
         "spatial_delta_log2_normalized": matrix(&delta_normalized, grid_width, grid_height)?
     }))
+}
+
+/// Convert the two normalized network maps to compact uint8 tensors.
+/// No JSON is written to disk; the JSON value exists only while this function
+/// derives the two arrays and their small metadata record.
+pub fn extract_network_u8(bytes: Vec<u8>, source: &str, options: Options) -> Result<NetworkU8> {
+    let document = extract_network_features(bytes, source, options)?;
+    let width = document["image"]["grid_width"]
+        .as_u64()
+        .ok_or_else(|| invalid("grid_width mancante."))? as usize;
+    let height = document["image"]["grid_height"]
+        .as_u64()
+        .ok_or_else(|| invalid("grid_height mancante."))? as usize;
+    let rank_u8 = u8_matrix(&document, "spatial_rank_normalized", width, height)?;
+    let delta_u8 = u8_matrix(&document, "spatial_delta_log2_normalized", width, height)?;
+    let metadata = json!({
+        "schema": "igd-network-npz-v1",
+        "source": document["source"].clone(),
+        "image": document["image"].clone(),
+        "verification": document["verification"].clone(),
+        "representation": {
+            "name": "sorted-base-rank-and-delta-u8-v1",
+            "array_order": "C row-major; shape is (height, width).",
+            "rank_u8": "round(255 * rank / (num_bases - 1)); zero if num_bases is 1. Training restores approximately with rank_u8 / 255.",
+            "delta_u8": "round(255 * log2(delta + 1) / log2(max_delta + 1)); zero if max_delta is zero. Training restores approximately with delta_u8 / 255.",
+            "channel_order": ["rank_u8", "delta_u8"]
+        },
+        "num_bases": document["num_bases"].clone(),
+        "num_samples": document["num_samples"].clone(),
+        "base_min_bits": document["base_min_bits"].clone(),
+        "base_max_bits": document["base_max_bits"].clone(),
+        "max_delta_bits": document["max_delta_bits"].clone()
+    });
+    Ok(NetworkU8 {
+        width,
+        height,
+        rank_u8,
+        delta_u8,
+        metadata_json: serde_json::to_vec_pretty(&metadata)?,
+    })
+}
+
+/// Write a standard NumPy `.npz` archive with `rank_u8` and `delta_u8` arrays.
+/// The third ZIP entry, `metadata.json`, is deliberately not a NumPy array and
+/// therefore is ignored by `numpy.load(...).files` while remaining inspectable.
+pub fn write_network_npz<P: AsRef<Path>>(
+    bytes: Vec<u8>,
+    source: &str,
+    options: Options,
+    output_path: P,
+) -> Result<NetworkNpzSummary> {
+    let network = extract_network_u8(bytes, source, options)?;
+    let rank_npy = npy_u8_2d(network.width, network.height, &network.rank_u8)?;
+    let delta_npy = npy_u8_2d(network.width, network.height, &network.delta_u8)?;
+    let output_path = output_path.as_ref();
+    if let Some(parent) = output_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output_path)?;
+    let mut writer = BufWriter::new(file);
+    write_stored_npz(
+        &mut writer,
+        vec![
+            ZipEntry {
+                name: "rank_u8.npy",
+                bytes: rank_npy,
+            },
+            ZipEntry {
+                name: "delta_u8.npy",
+                bytes: delta_npy,
+            },
+            ZipEntry {
+                name: "metadata.json",
+                bytes: network.metadata_json,
+            },
+        ],
+    )?;
+    writer.flush()?;
+    let file_bytes = std::fs::metadata(output_path)?.len();
+    Ok(NetworkNpzSummary {
+        width: network.width,
+        height: network.height,
+        tensor_bytes: network.rank_u8.len() + network.delta_u8.len(),
+        file_bytes,
+    })
 }
 
 /// Reassemble one transformed chunk using only the JSON representation.
