@@ -1,2 +1,6 @@
 Repository: https://github.com/Voggo/gdcompress
-Commit: 8927486e4ab16a33ab872fe1e530514653a01b4d
+Upstream reference commit: 8927486e4ab16a33ab872fe1e530514653a01b4d
+
+The sources in src/gdcompress are maintained in the main AARHUS Git repository.
+The upstream reference identifies their origin; local changes are recorded in
+the main repository's commits. There is no separate nested Git repository.

@@ -1,0 +1,49 @@
+[package]
+name = "gdcompress"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+
+[dependencies]
+argh = "0.1"
+bitvec = "1.0.1"
+polars = { version = "0.54", features = ["csv"], default-features = false }
+chrono = "0.4.44"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tracing-appender = "0.2.4"
+once_cell = "1.21.4"
+fxhash = "0.2.1"
+image = { version = "0.25.10", default-features = true }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
+serde_json = { version = "1.0.149", optional = true }
+rayon = "1.12.0"
+
+[dev-dependencies]
+criterion = "0.8.2"
+pretty_assertions = "1.4.1"
+png = "0.18.1"
+qoi = "0.4.1"
+dicom-toolkit-codec = "0.5.0"
+
+[profile.release]
+
+[profile.bench]
+
+[[bin]]
+name = "gdcompress"
+path = "src/bin/gdcompress.rs"
+
+[[bench]]
+name = "benchmark"
+harness = false
+
+[[bench]]
+name = "benchmark_individual"
+harness = false
+
+[[bench]]
+name = "benchmark_compression_ratio"
+harness = false

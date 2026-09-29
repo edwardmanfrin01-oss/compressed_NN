@@ -4,8 +4,7 @@
 /runs/
 /tmp/
 
-# Repository of the compression algorithm, excluded because it is managed separately
-/src/gdcompress/
+# The compression algorithm sources in src/gdcompress are tracked in this repository.
 
 # Compiled rust files
 **/target/
