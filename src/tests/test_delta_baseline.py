@@ -1,7 +1,7 @@
 """Run: python -m unittest discover -s src -p test_delta_baseline.py"""
 import unittest
 import numpy as np
-from delta_baseline import deltas_from_document, summarize_deltas, forward
+from tests.try_delta_baseline import deltas_from_document, summarize_deltas, forward
 
 
 class DeltaBaselineTests(unittest.TestCase):

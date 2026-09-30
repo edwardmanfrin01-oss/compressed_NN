@@ -5,11 +5,11 @@ ed esporta un JSON indentato. Non riesegue la compressione e non modifica la
 repository del compressore. Il formato e le API sono quelli della copia locale
 esaminata, commit `8927486e4ab16a33ab872fe1e530514653a01b4d`.
 
-## Utilizzo
+
+## Utilizzo (this command below shows why the executable of igd_extract is in the gdcompress project folder)
 
 Eseguire dalla cartella del progetto `C:\Users\edward\CODING_PROJECTS\AARHUS`:
 
-# this row below shows why the executable of igd_extract is in the gdcompress project folder
 ```powershell
 cargo run --release --locked --manifest-path src/igd_extract/Cargo.toml --target-dir src/gdcompress/target -- data/cifar-10_compressed/image_00000.igd -o output/igd/image_00000.json --verify
 ```
@@ -25,6 +25,9 @@ Opzioni:
 - `-o PATH` / `--output PATH`: destinazione; il default e `INPUT.decoded.json`.
 - `--network-features`: genera direttamente la rappresentazione del primo
   esperimento: dizionario ordinato, delta esatti e mappe spaziali di rango e delta.
+- `--network-npz`: directly generates the .npz file containing the two spatial maps 
+  (`spatial_ranks` and `spatial_deltas`), ready as input for the Model. Values 
+  are normalized and mapped in [0,255] to obain a uint8 representation (see below). 
 - `--verify`: ricostruisce i blocchi trasformati da basi, ID, mappa e deviazioni
   e confronta **ogni bit di ogni campione** con il decoder di `gdcompress`.
   Non crea un'immagine RGB; questa verifica richiede lavoro e memoria aggiuntivi.
@@ -53,13 +56,13 @@ con `--pixel-grouping 1x1`:
 .\src\gdcompress\target\release\igd_extract.exe data/cifar-10_compressed/image_00000.igd -o output/network/image_00000.network.json --network-features --verify
 ```
 
-Ogni base e una stringa binaria a larghezza fissa. L'estrattore la ordina in
+Ogni base è una stringa binaria a larghezza fissa. L'estrattore la ordina in
 ordine crescente lessicografico, con il carattere piu a sinistra interpretato
 come bit piu significativo della convenzione sperimentale. Questo evita di
 convertire basi lunghe in `float` o `u64`, che ne perderebbero i bit.
 
-Il nuovo ID e il **rango** della base ordinata. Il primo delta vale zero; ogni
-successivo delta e la differenza esatta con la base di rango precedente. Il JSON
+Il nuovo ID è il **rango** della base ordinata. Il primo delta vale zero; ogni
+successivo delta è la differenza esatta con la base di rango precedente. Il JSON
 conserva sia `delta_bits` e `spatial_delta_bits` come stringhe binarie esatte,
 sia due matrici normalizzate da usare come i primi due canali della rete:
 
@@ -68,9 +71,9 @@ spatial_rank_normalized[y][x] = rank / (num_bases - 1)
 spatial_delta_log2_normalized[y][x] = log2(delta + 1) / log2(max_delta + 1)
 ```
 
-Il valore zero e usato per entrambi i canali quando il denominatore sarebbe
+Il valore zero è usato per entrambi i canali quando il denominatore sarebbe
 zero. `spatial_delta_bits[y][x]` non descrive la differenza dal pixel vicino:
-e il delta della base associata a quel pixel nel dizionario ordinato. La
+è il delta della base associata a quel pixel nel dizionario ordinato. La
 geometria resta nella posizione `(y, x)` della matrice; il significato preciso
 di ciascun delta resta nel campo `sorted_dictionary`.
 
@@ -81,15 +84,15 @@ questa distinzione.
 
 Campi principali aggiunti dal formato `igd-network-features-v1`:
 
-| Campo | Significato |
-|---|---|
-| `sorted_dictionary` | Base ordinata, ID originale, rango, delta esatto e frequenza |
+| Campo                             | Significato |
+|---                                |---|
+| `sorted_dictionary`               | Base ordinata, ID originale, rango, delta esatto e frequenza |
 | `base_min_bits` / `base_max_bits` | Estremi esatti del dizionario ordinato |
-| `spatial_rank_ids` | Nuovi ID/ranghi nella geometria originale dell'immagine |
-| `spatial_delta_bits` | Delta esatto associato a ogni rango, disposto spazialmente |
-| `spatial_rank_normalized` | Primo canale numerico per la rete |
-| `spatial_delta_log2_normalized` | Secondo canale numerico per la rete |
-| `representation` | Convenzioni complete di ordine e normalizzazione |
+| `spatial_rank_ids`                | Nuovi ID/ranghi nella geometria originale dell'immagine |
+| `spatial_delta_bits`              | Delta esatto associato a ogni rango, disposto spazialmente |
+| `spatial_rank_normalized`         | Primo canale numerico per la rete |
+| `spatial_delta_log2_normalized`   | Secondo canale numerico per la rete |
+| `representation`                  | Convenzioni complete di ordine e normalizzazione |
 
 Con gruppo `1x1`, una immagine 224x224 produce due mappe 224x224, una per
 canale. I file JSON sono destinati a controllo e tracciabilita: per il training
@@ -122,7 +125,7 @@ python src/batch_network_features.py
 
 Il primo script usa `1x1` per default e scrive in
 `data/cifar-10_compressed_pg_1x1`; il secondo legge quella cartella e scrive in
-`output/network_features_pg_1x1_npz`. Entrambi rifiutano di sovrascrivere un file
+`output/network_features_1x1_v1`. Entrambi rifiutano di sovrascrivere un file
 gia presente. Dopo un'interruzione, usare `--resume`. Provare prima su poche
 immagini specificando `--input-dir`, `--output-dir` e, per l'esportatore,
 `--verify`.
@@ -137,7 +140,7 @@ per riprendere dopo un'interruzione.
 **Tutti gli indici e gli ID nel JSON partono da 0.** Le stringhe di bit sono
 sequenze di caratteri; non vanno interpretate come numeri binari MSB-first.
 
-La relazione principale e:
+La relazione principale è:
 
 ```text
 blocco_trasformato[base_bit_positions[k]] = bases[id].bits[k]
@@ -154,11 +157,11 @@ Esempio schematico:
 ```
 
 Il primo carattere di `101` va in posizione 0, il secondo in posizione 1,
-il terzo in posizione 4. Le altre posizioni sono deviazioni. La lista e ordinata
+il terzo in posizione 4. Le altre posizioni sono deviazioni. La lista è ordinata
 per posizione crescente e le stringhe delle basi sono esportate nello stesso
 ordine: non serve conoscere quale posizione l'algoritmo abbia scelto per prima.
 
-La **cronologia delle scelte**, ad esempio `1 -> 2 -> 5 -> 3`, non e salvata
+La **cronologia delle scelte**, ad esempio `1 -> 2 -> 5 -> 3`, non è salvata
 nel file IGD. `selection_order` vale quindi `null`. Non viene confusa con
 l'ordine delle colonne per entropia utilizzato internamente dal delta coding:
 il decoder annulla quella permutazione prima dell'esportazione. Per registrare
@@ -167,28 +170,29 @@ una nuova compressione.
 
 ## Campi del JSON
 
-| Campo | Significato |
-|---|---|
-| `schema` | Versione dello schema di esportazione: `igd-extract-v1` |
-| `source` | Percorso, dimensione, versioni IGD/EGD e codifiche del file letto |
-| `conventions` | Convenzioni esplicite su indici, stringhe e disposizione |
-| `image` | Dimensioni, canali, modello colore, trasformazione, raggruppamento e griglia |
-| `features` | Per canale/feature: offset nel blocco, numero di bit, tipo e trasformazione |
-| `chunk_bits` | Numero effettivo di bit del blocco trasformato |
-| `base_bits` | Lunghezza di `bases[id].bits`, inclusi i bit costanti |
-| `variable_base_bits` | Lunghezza della sola parte variabile del dizionario |
-| `base_bit_positions` | Mappa colonna della base completa -> posizione nel blocco |
+| Campo                         | Significato |
+|---                            |---|
+| `schema`                      | Versione dello schema di esportazione: `igd-extract-v1` |
+| `source`                      | Percorso, dimensione, versioni IGD/EGD e codifiche del file letto |
+| `conventions`                 | Convenzioni esplicite su indici, stringhe e disposizione |
+| `image`                       | Dimensioni, canali, modello colore, trasformazione, raggruppamento e griglia |
+| `features`                    | Per canale/feature: offset nel blocco, numero di bit, tipo e trasformazione |
+| `chunk_bits`                  | Numero effettivo di bit del blocco trasformato |
+| `base_bits`                   | Lunghezza di `bases[id].bits`, inclusi i bit costanti |
+| `variable_base_bits`          | Lunghezza della sola parte variabile del dizionario |
+| `base_bit_positions`          | Mappa colonna della base completa -> posizione nel blocco |
 | `variable_base_bit_positions` | Mappa colonna di `variable_bits` -> posizione nel blocco |
-| `constant_zero_bit_positions` / `constant_one_bit_positions` | Posizioni costanti reinserite nelle basi complete |
-| `deviation_bit_positions` | Mappa colonna della deviazione -> posizione nel blocco |
-| `bases` | Dizionario: ID, stringa completa, stringa variabile, frequenza |
-| `sample_base_ids` | Un ID per gruppo di pixel, nell'ordine spaziale originale |
-| `sample_deviation_bits` | Una stringa per gruppo, oppure `null` se non richiesta |
-| `selection_order` | `null`: cronologia non presente nel formato |
-| `verification` | Indica se e stato eseguito e superato il confronto con il decoder |
+| `constant_zero_bit_positions` | Posizioni costanti (with value 0) reinserite nelle basi complete | 
+| `constant_one_bit_positions`  | Posizioni costanti (with value 1) reinserite nelle basi complete |
+| `deviation_bit_positions`     | Mappa colonna della deviazione -> posizione nel blocco |
+| `bases`                       | Dizionario: ID, stringa completa, stringa variabile, frequenza |
+| `sample_base_ids`             | Un ID per gruppo di pixel, nell'ordine spaziale originale |
+| `sample_deviation_bits`       | Una stringa per gruppo, oppure `null` se non richiesta |
+| `selection_order`             | `null`: cronologia non presente nel formato |
+| `verification`                | Indica se e stato eseguito e superato il confronto con il decoder |
 
 Gli ID mantengono la numerazione del dizionario nel file. Le frequenze sono
-ricalcolate contando gli ID dei campioni, anche quando il dizionario e delta-coded.
+ricalcolate contando gli ID dei campioni, anche quando il dizionario è delta-coded.
 Il numero di basi e la loro lunghezza possono variare da immagine a immagine.
 Un ID ha significato solo insieme al dizionario della stessa immagine.
 
@@ -224,7 +228,7 @@ ricomporre il blocco e poi invertire le trasformazioni di gruppo e colore usando
 i metadati e le funzioni di `gdcompress`.
 
 **Basi + ID + posizioni non contengono generalmente tutti i valori originali.**
-Per la ricostruzione completa servono anche le deviazioni. Senza di esse e
+Per la ricostruzione completa servono anche le deviazioni. Senza di esse è
 possibile identificare i bit noti, ma non bisogna sostituire i bit mancanti con
 zeri fingendo che il risultato sia la ricostruzione originale. Il JSON non
 recupera nemmeno informazioni perse prima della compressione, per esempio in

@@ -1,4 +1,5 @@
-"""Resize of images from 32x32x3 to 224x224x3"""
+"""Resize of all images of the dataset from 32x32x3 to 224x224x3.
+   Labels will be saved as well"""
 
 import tarfile
 import pickle

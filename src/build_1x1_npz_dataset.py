@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--npz-dir",
         type=Path,
-        default=PROJECT_ROOT / "output" / "network_features_pg_1x1_npz",
+        default=PROJECT_ROOT / "output" / "network_features_1x1_v1",
         help="Directory for final rank_u8/delta_u8 NPZ files.",
     )
     parser.add_argument(

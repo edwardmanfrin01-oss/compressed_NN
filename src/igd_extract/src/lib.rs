@@ -61,7 +61,7 @@ fn compare_binary(left: &str, right: &str) -> std::cmp::Ordering {
 fn subtract_binary(left: &str, right: &str) -> Result<String> {
     if left.len() != right.len() || compare_binary(left, right).is_lt() {
         return Err(invalid(
-            "Sottrazione binaria non valida per le basi ordinate.",
+            "Invalid binary subtraction for ordered bases.",
         ));
     }
     let mut result = vec![b'0'; left.len()];
@@ -70,11 +70,11 @@ fn subtract_binary(left: &str, right: &str) -> Result<String> {
         let lhs = left.as_bytes()[index]
             .checked_sub(b'0')
             .filter(|bit| *bit <= 1)
-            .ok_or_else(|| invalid("Bit non binario in una base."))?;
+            .ok_or_else(|| invalid("Non-binary bit in a base value."))?;
         let rhs = right.as_bytes()[index]
             .checked_sub(b'0')
             .filter(|bit| *bit <= 1)
-            .ok_or_else(|| invalid("Bit non binario in una base."))?;
+            .ok_or_else(|| invalid("Non-binary bit in a base value."))?;
         let subtrahend = rhs + borrow;
         if lhs >= subtrahend {
             result[index] = b'0' + (lhs - subtrahend);
@@ -85,7 +85,7 @@ fn subtract_binary(left: &str, right: &str) -> Result<String> {
         }
     }
     if borrow != 0 {
-        return Err(invalid("Prestito residuo nella sottrazione binaria."));
+        return Err(invalid("Residual borrow in the binary subtraction."));
     }
     String::from_utf8(result).map_err(Into::into)
 }
@@ -97,7 +97,7 @@ fn add_one_binary(bits: &str) -> Result<String> {
         let bit = value
             .checked_sub(b'0')
             .filter(|bit| *bit <= 1)
-            .ok_or_else(|| invalid("Bit non binario in un delta."))?;
+            .ok_or_else(|| invalid("Non-binary bit in a delta value."))?;
         let sum = bit + carry;
         *value = b'0' + (sum & 1);
         carry = sum >> 1;
@@ -123,7 +123,7 @@ fn binary_log2(bits: &str) -> Result<f64> {
     let mut prefix = 0u64;
     for byte in significant.bytes().take(prefix_len) {
         if !matches!(byte, b'0' | b'1') {
-            return Err(invalid("Bit non binario in un delta."));
+            return Err(invalid("Non-binary bit in a delta value."));
         }
         prefix = (prefix << 1) | u64::from(byte == b'1');
     }
@@ -134,7 +134,7 @@ fn binary_log2(bits: &str) -> Result<f64> {
 fn matrix<T: Clone>(values: &[T], width: usize, height: usize) -> Result<Vec<Vec<T>>> {
     if values.len() != width.saturating_mul(height) {
         return Err(invalid(
-            "Lunghezza della mappa diversa dalla griglia dell'immagine.",
+            "Map length is different from the image's grid.",
         ));
     }
     Ok(values.chunks(width).map(|row| row.to_vec()).collect())
@@ -144,7 +144,7 @@ fn matrix<T: Clone>(values: &[T], width: usize, height: usize) -> Result<Vec<Vec
 /// The inverse used by the training loader is approximately `byte / 255.0`.
 fn quantize_unit(value: f64) -> Result<u8> {
     if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-        return Err(invalid("Valore normalizzato fuori dall'intervallo [0, 1]."));
+        return Err(invalid("Value normalized is outside the range [0, 1]."));
     }
     Ok((value * 255.0).round() as u8)
 }
@@ -152,21 +152,21 @@ fn quantize_unit(value: f64) -> Result<u8> {
 fn u8_matrix(document: &Value, key: &str, width: usize, height: usize) -> Result<Vec<u8>> {
     let rows = document[key]
         .as_array()
-        .ok_or_else(|| invalid(format!("Mappa {key} mancante.")))?;
+        .ok_or_else(|| invalid(format!("Map {key} is missing.")))?;
     if rows.len() != height {
-        return Err(invalid(format!("Altezza non valida per la mappa {key}.")));
+        return Err(invalid(format!("Invalid height for map {key}.")));
     }
     let mut values = Vec::with_capacity(width * height);
     for row in rows {
         let row = row
             .as_array()
-            .ok_or_else(|| invalid(format!("Riga non valida per la mappa {key}.")))?;
+            .ok_or_else(|| invalid(format!("Invalid row for map {key}.")))?;
         if row.len() != width {
-            return Err(invalid(format!("Larghezza non valida per la mappa {key}.")));
+            return Err(invalid(format!("Invalid width for map {key}.")));
         }
         for value in row {
             values.push(quantize_unit(value.as_f64().ok_or_else(|| {
-                invalid(format!("Valore non numerico nella mappa {key}."))
+                invalid(format!("Non-numerical value for map {key}."))
             })?)?);
         }
     }
@@ -192,10 +192,10 @@ fn npy_u8_2d(width: usize, height: usize, values: &[u8]) -> Result<Vec<u8>> {
     if values.len()
         != width
             .checked_mul(height)
-            .ok_or_else(|| invalid("Dimensioni NPY troppo grandi."))?
+            .ok_or_else(|| invalid("NPY dimensions are too big."))?
     {
         return Err(invalid(
-            "Lunghezza del canale diversa dalle dimensioni NPY.",
+            "Channel length is different from the NPY dimensions.",
         ));
     }
     let mut header =
@@ -206,7 +206,7 @@ fn npy_u8_2d(width: usize, height: usize, values: &[u8]) -> Result<Vec<u8>> {
     header.extend(std::iter::repeat_n(b' ', padding));
     header.push(b'\n');
     let header_len =
-        u16::try_from(header.len()).map_err(|_| invalid("Header NPY troppo lungo."))?;
+        u16::try_from(header.len()).map_err(|_| invalid("NPY header is too long."))?;
     let mut output = Vec::with_capacity(10 + header.len() + values.len());
     output.extend_from_slice(b"\x93NUMPY");
     output.extend_from_slice(&[1, 0]);
@@ -227,13 +227,13 @@ struct ZipEntry {
 fn write_stored_npz(mut writer: impl Write, entries: Vec<ZipEntry>) -> Result<()> {
     let mut central = Vec::new();
     let mut offset = 0u32;
-    let entry_count = u16::try_from(entries.len()).map_err(|_| invalid("Troppe entry NPZ."))?;
+    let entry_count = u16::try_from(entries.len()).map_err(|_| invalid("Too many NPZ entries."))?;
     for entry in entries {
         let name = entry.name.as_bytes();
         let size =
-            u32::try_from(entry.bytes.len()).map_err(|_| invalid("Entry NPZ troppo grande."))?;
+            u32::try_from(entry.bytes.len()).map_err(|_| invalid("NPZ entries are too big."))?;
         let name_len =
-            u16::try_from(name.len()).map_err(|_| invalid("Nome entry NPZ troppo lungo."))?;
+            u16::try_from(name.len()).map_err(|_| invalid("NPZ entry's name is too long."))?;
         let crc = crc32(&entry.bytes);
         writer.write_all(&0x0403_4B50u32.to_le_bytes())?;
         writer.write_all(&20u16.to_le_bytes())?;
@@ -270,11 +270,11 @@ fn write_stored_npz(mut writer: impl Write, entries: Vec<ZipEntry>) -> Result<()
 
         offset = offset
             .checked_add(30 + u32::from(name_len) + size)
-            .ok_or_else(|| invalid("Overflow dimensione archivio NPZ."))?;
+            .ok_or_else(|| invalid("Overflow of the NPZ archive's dimension."))?;
     }
     let central_offset = offset;
     let central_size =
-        u32::try_from(central.len()).map_err(|_| invalid("Indice NPZ troppo grande."))?;
+        u32::try_from(central.len()).map_err(|_| invalid("NPZ index is too big."))?;
     writer.write_all(&central)?;
     writer.write_all(&0x0605_4B50u32.to_le_bytes())?;
     writer.write_all(&0u16.to_le_bytes())?;
@@ -312,13 +312,13 @@ fn feature_transform(transform: FeatureTransform) -> Value {
 pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> {
     if bytes.len() < 32 || &bytes[..3] != b"IGD" {
         return Err(invalid(
-            "File non IGD o header incompleto (minimo 32 byte).",
+            "The file is not IGD or the header is uncompleted (32 bytes minimum).",
         ));
     }
     let payload_len = u64::from_le_bytes(bytes[24..32].try_into()?);
     if payload_len != (bytes.len() - 32) as u64 || payload_len < 28 {
         return Err(invalid(
-            "Lunghezza IGD non valida: possibile file troncato.",
+            "Invalid IGD length: truncated file possibility.",
         ));
     }
     let igd_version = bytes[3];
@@ -327,13 +327,13 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
     let mut compressed = IgdFile::from_bytes(bytes).to_compressed_data()?;
     let info = match &compressed.metadata.reconstruction {
         BitDataReconstructionInfo::Image(info) => *info,
-        _ => return Err(invalid("Metadati immagine mancanti.")),
+        _ => return Err(invalid("Missing image Metadata.")),
     };
     // Condensation stores unique samples and weights, not their original spatial
     // ordering. Never label that list as an image's spatial ID map.
     if compressed.condensed_sample_weights.is_some() {
         return Err(invalid(
-            "Campioni condensati: non e' disponibile una mappa spaziale affidabile.",
+            "Condensed samples: it is not possible to obtain a reliable spatial map.",
         ));
     }
     let base_encoding = match &compressed.base_table {
@@ -341,7 +341,7 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
         BaseTable::Delta(delta) => match delta.codec_id {
             1 => "delta_unary",
             2 => "delta_fixed",
-            _ => return Err(invalid("Codec del dizionario non supportato.")),
+            _ => return Err(invalid("Dictionary Codec not supported.")),
         },
     };
     if let BaseTable::Delta(delta) = &compressed.base_table {
@@ -369,17 +369,17 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
     let grid_height = info.height.div_ceil(info.pixel_grouping.height()) as usize;
     let count = grid_width
         .checked_mul(grid_height)
-        .ok_or_else(|| invalid("Dimensioni della griglia troppo grandi."))?;
+        .ok_or_else(|| invalid("Grid dimensions are too big."))?;
     if samples.get_num_samples() != count || compressed.metadata.n_data_samples() != count {
         return Err(invalid(
-            "Numero di campioni diverso dalla griglia dei gruppi di pixel.",
+            "Number of samples different from the pixel group's grid.",
         ));
     }
     if compressed.layout.chunk_size() != chunk_bits
         || samples.get_num_deviation_bits() != deviation_positions.len()
         || base_positions.len() + deviation_positions.len() != chunk_bits
     {
-        return Err(invalid("Layout dei bit incoerente con i campioni."));
+        return Err(invalid("Bit layout not the same as the sample layout."));
     }
 
     // Rows contain ONLY variable bits, already restored to ascending chunk-position
@@ -388,7 +388,7 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
     let mut bases = Vec::with_capacity(table.len());
     for (id, (variable_bits, _)) in table.iter().enumerate() {
         if variable_bits.len() != variable_positions.len() {
-            return Err(invalid(format!("Lunghezza non valida per la base {id}.")));
+            return Err(invalid(format!("Invalid length for the base {id}.")));
         }
         let mut variable_index = 0;
         let mut full_bits = String::with_capacity(base_positions.len());
@@ -402,7 +402,7 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
                 BaseBitLayoutState::ConstantZero => false,
                 BaseBitLayoutState::ConstantOne => true,
                 BaseBitLayoutState::Deviation => {
-                    return Err(invalid("Base contenente una deviazione."));
+                    return Err(invalid("The base contains a deviation."));
                 }
             };
             full_bits.push(if bit { '1' } else { '0' });
@@ -424,9 +424,9 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
     for i in 0..count {
         let sample = samples
             .get_sample(i)
-            .ok_or_else(|| invalid(format!("Campione {i} non decodificabile.")))?;
+            .ok_or_else(|| invalid(format!("Sample {i} not decodable.")))?;
         if sample.id.len() > usize::BITS as usize {
-            return Err(invalid("ID troppo lungo per questa piattaforma."));
+            return Err(invalid("ID too long for this platform."));
         }
         let id = if sample.id.is_empty() {
             0
@@ -435,7 +435,7 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
         };
         let frequency = frequencies
             .get_mut(id)
-            .ok_or_else(|| invalid(format!("ID {id} fuori dal dizionario, campione {i}.")))?;
+            .ok_or_else(|| invalid(format!("ID {id} out of dictionary's range, sample {i}.")))?;
         *frequency += 1;
         ids.push(id);
         if keep_deviations {
@@ -464,7 +464,7 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
         })
         .collect();
     if offset != chunk_bits {
-        return Err(invalid("Dimensioni delle feature incoerenti."));
+        return Err(invalid("Feature dimensions are not valid."));
     }
     let mut document = json!({
         "schema": "igd-extract-v1",
@@ -518,7 +518,7 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
             let start = i * reference.data.stride;
             if rebuilt.as_bitslice() != &reference.data.data[start..start + chunk_bits] {
                 return Err(invalid(format!(
-                    "Verifica fallita: bit differenti nel campione {i}."
+                    "Verification failed: different bits in the sample {i}."
                 )));
             }
         }
@@ -545,47 +545,47 @@ pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) 
     let extracted = extract(bytes, source, options)?;
     let base_bits = extracted["base_bits"]
         .as_u64()
-        .ok_or_else(|| invalid("base_bits mancante."))? as usize;
+        .ok_or_else(|| invalid("base_bits is missing."))? as usize;
     let num_bases = extracted["num_bases"]
         .as_u64()
-        .ok_or_else(|| invalid("num_bases mancante."))? as usize;
+        .ok_or_else(|| invalid("num_bases is missing."))? as usize;
     let grid_width = extracted["image"]["grid_width"]
         .as_u64()
-        .ok_or_else(|| invalid("grid_width mancante."))? as usize;
+        .ok_or_else(|| invalid("grid_width is missing."))? as usize;
     let grid_height = extracted["image"]["grid_height"]
         .as_u64()
-        .ok_or_else(|| invalid("grid_height mancante."))? as usize;
+        .ok_or_else(|| invalid("grid_height is missing."))? as usize;
     let raw_bases = extracted["bases"]
         .as_array()
-        .ok_or_else(|| invalid("Dizionario delle basi mancante."))?;
+        .ok_or_else(|| invalid("Dizionario delle basi is missing."))?;
     if raw_bases.len() != num_bases || num_bases == 0 {
-        return Err(invalid("Numero di basi non valido."));
+        return Err(invalid("Invalid bases number."));
     }
 
     let mut ordered: Vec<(usize, String, usize)> = Vec::with_capacity(num_bases);
     for base in raw_bases {
         let old_id = base["id"]
             .as_u64()
-            .ok_or_else(|| invalid("ID originale mancante."))? as usize;
+            .ok_or_else(|| invalid("Original ID is missing."))? as usize;
         let bits = base["bits"]
             .as_str()
-            .ok_or_else(|| invalid("Bit della base mancanti."))?
+            .ok_or_else(|| invalid("Base bits are missing."))?
             .to_owned();
         let frequency = base["frequency"]
             .as_u64()
-            .ok_or_else(|| invalid("Frequenza della base mancante."))?
+            .ok_or_else(|| invalid("Base frequency is missing."))?
             as usize;
         if old_id >= num_bases
             || bits.len() != base_bits
             || !bits.bytes().all(|b| matches!(b, b'0' | b'1'))
         {
-            return Err(invalid("Base non valida nel dizionario."));
+            return Err(invalid("Invalid base in the dictionary."));
         }
         ordered.push((old_id, bits, frequency));
     }
     ordered.sort_by(|left, right| compare_binary(&left.1, &right.1));
     if ordered.windows(2).any(|pair| pair[0].1 == pair[1].1) {
-        return Err(invalid("Il dizionario contiene basi duplicate."));
+        return Err(invalid("Dictionary contains duplicated bases."));
     }
 
     let mut old_to_rank = vec![None; num_bases];
@@ -594,9 +594,9 @@ pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) 
     for (rank, (old_id, bits, frequency)) in ordered.iter().enumerate() {
         let slot = old_to_rank
             .get_mut(*old_id)
-            .ok_or_else(|| invalid("ID originale fuori intervallo."))?;
+            .ok_or_else(|| invalid("Original ID out of range."))?;
         if slot.replace(rank).is_some() {
-            return Err(invalid("ID originale duplicato."));
+            return Err(invalid("Original ID is duplicated."));
         }
         let delta = if rank == 0 {
             "0".repeat(base_bits)
@@ -614,24 +614,24 @@ pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) 
     }
     let old_ids = extracted["sample_base_ids"]
         .as_array()
-        .ok_or_else(|| invalid("ID spaziali mancanti."))?;
+        .ok_or_else(|| invalid("Spatial IDs are missing."))?;
     let mut ranks = Vec::with_capacity(old_ids.len());
     let mut spatial_delta_bits = Vec::with_capacity(old_ids.len());
     for old_id in old_ids {
         let old_id = old_id
             .as_u64()
-            .ok_or_else(|| invalid("ID spaziale non intero."))? as usize;
+            .ok_or_else(|| invalid("Spatial ID is not an integer."))? as usize;
         let rank = old_to_rank
             .get(old_id)
             .and_then(|value| *value)
-            .ok_or_else(|| invalid("ID spaziale fuori dal dizionario."))?;
+            .ok_or_else(|| invalid("Spatial ID is outside the dictionary values."))?;
         ranks.push(rank);
         spatial_delta_bits.push(deltas[rank].clone());
     }
     let max_delta = deltas
         .iter()
         .max_by(|left, right| compare_binary(left, right))
-        .ok_or_else(|| invalid("Delta mancanti."))?;
+        .ok_or_else(|| invalid("Missing Deltas."))?;
     // `log2(delta + 1)` avoids -infinity for rank zero and preserves a bounded
     // numeric feature even when bases are wider than f64 can represent exactly.
     let denominator = binary_log2(&add_one_binary(max_delta)?)?;
@@ -659,7 +659,7 @@ pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) 
     let frequencies: usize = ordered.iter().map(|(_, _, frequency)| frequency).sum();
     if frequencies != ranks.len() {
         return Err(invalid(
-            "Le frequenze del dizionario non coincidono con gli ID spaziali.",
+            "Dictionary's frequencies do not coincide with spatial IDs.",
         ));
     }
 

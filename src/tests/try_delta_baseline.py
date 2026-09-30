@@ -1,7 +1,6 @@
 """Non-spatial delta-only baseline. Only NumPy is required outside the Rust codecs.
 
-Run `prepare` then `train`; use --help on either command. No PyTorch required.
-"""
+Run `prepare` then `train`; use --help on either command. No PyTorch required."""
 
 from __future__ import annotations
 
