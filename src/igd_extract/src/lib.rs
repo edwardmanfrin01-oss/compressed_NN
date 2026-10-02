@@ -12,6 +12,9 @@ use std::fs::OpenOptions;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
+mod cumulative;
+pub use cumulative::{CumulativeU16, extract_cumulative_u16, write_cumulative_npz};
+
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Default, Clone, Copy)]
@@ -60,9 +63,7 @@ fn compare_binary(left: &str, right: &str) -> std::cmp::Ordering {
 /// Leading zeroes are kept so a delta has the same bit width as its base.
 fn subtract_binary(left: &str, right: &str) -> Result<String> {
     if left.len() != right.len() || compare_binary(left, right).is_lt() {
-        return Err(invalid(
-            "Invalid binary subtraction for ordered bases.",
-        ));
+        return Err(invalid("Invalid binary subtraction for ordered bases."));
     }
     let mut result = vec![b'0'; left.len()];
     let mut borrow = 0u8;
@@ -133,9 +134,7 @@ fn binary_log2(bits: &str) -> Result<f64> {
 
 fn matrix<T: Clone>(values: &[T], width: usize, height: usize) -> Result<Vec<Vec<T>>> {
     if values.len() != width.saturating_mul(height) {
-        return Err(invalid(
-            "Map length is different from the image's grid.",
-        ));
+        return Err(invalid("Map length is different from the image's grid."));
     }
     Ok(values.chunks(width).map(|row| row.to_vec()).collect())
 }
@@ -189,9 +188,20 @@ fn crc32(bytes: &[u8]) -> u32 {
 }
 
 fn npy_u8_2d(width: usize, height: usize, values: &[u8]) -> Result<Vec<u8>> {
+    npy_2d(width, height, values, "|u1", 1)
+}
+
+fn npy_2d(
+    width: usize,
+    height: usize,
+    values: &[u8],
+    dtype: &str,
+    itemsize: usize,
+) -> Result<Vec<u8>> {
     if values.len()
         != width
             .checked_mul(height)
+            .and_then(|n| n.checked_mul(itemsize))
             .ok_or_else(|| invalid("NPY dimensions are too big."))?
     {
         return Err(invalid(
@@ -199,14 +209,13 @@ fn npy_u8_2d(width: usize, height: usize, values: &[u8]) -> Result<Vec<u8>> {
         ));
     }
     let mut header =
-        format!("{{'descr': '|u1', 'fortran_order': False, 'shape': ({height}, {width}), }}")
+        format!("{{'descr': '{dtype}', 'fortran_order': False, 'shape': ({height}, {width}), }}")
             .into_bytes();
     // NPY v1.0 header: magic(6) + version(2) + length(2) + header must be a multiple of 16.
     let padding = (16 - ((10 + header.len() + 1) % 16)) % 16;
     header.extend(std::iter::repeat_n(b' ', padding));
     header.push(b'\n');
-    let header_len =
-        u16::try_from(header.len()).map_err(|_| invalid("NPY header is too long."))?;
+    let header_len = u16::try_from(header.len()).map_err(|_| invalid("NPY header is too long."))?;
     let mut output = Vec::with_capacity(10 + header.len() + values.len());
     output.extend_from_slice(b"\x93NUMPY");
     output.extend_from_slice(&[1, 0]);
@@ -317,9 +326,7 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
     }
     let payload_len = u64::from_le_bytes(bytes[24..32].try_into()?);
     if payload_len != (bytes.len() - 32) as u64 || payload_len < 28 {
-        return Err(invalid(
-            "Invalid IGD length: truncated file possibility.",
-        ));
+        return Err(invalid("Invalid IGD length: truncated file possibility."));
     }
     let igd_version = bytes[3];
     let egd_version = bytes[35];
@@ -573,8 +580,7 @@ pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) 
             .to_owned();
         let frequency = base["frequency"]
             .as_u64()
-            .ok_or_else(|| invalid("Base frequency is missing."))?
-            as usize;
+            .ok_or_else(|| invalid("Base frequency is missing."))? as usize;
         if old_id >= num_bases
             || bits.len() != base_bits
             || !bits.bytes().all(|b| matches!(b, b'0' | b'1'))
@@ -736,7 +742,7 @@ pub fn extract_network_u8(bytes: Vec<u8>, source: &str, options: Options) -> Res
 
 /// Write a standard NumPy `.npz` archive with `rank_u8` and `delta_u8` arrays.
 /// The third ZIP entry, `metadata.json`, is deliberately not a NumPy array and
-/// therefore is ignored by `numpy.load(...).files` while remaining inspectable.
+/// appears in `numpy.load(...).files` as metadata, not as a tensor channel.
 pub fn write_network_npz<P: AsRef<Path>>(
     bytes: Vec<u8>,
     source: &str,

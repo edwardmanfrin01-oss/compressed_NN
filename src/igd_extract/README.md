@@ -284,3 +284,72 @@ Il `Cargo.lock` mantiene le versioni delle dipendenze risolte nella copia locale
 conservarlo per riprodurre la compilazione. Il JSON privilegia la leggibilita e
 puo essere molto piu grande dell'IGD, soprattutto includendo le deviazioni.
 Non e ancora il formato ottimizzato di input per una rete neurale.
+# Modalità cumulativa + rango (`uint16`)
+
+## Conversione in batch con versioni
+
+Dalla radice del progetto:
+
+```powershell
+python src/batch_network_features.py --version v1 --resume
+python src/batch_network_features.py --version v2 --scale 1 --resume
+```
+
+L'input predefinito è `data/cifar-10_compressed_1x1`. V1 salva i due canali
+uint8 in `output/network_features_1x1_v1`; v2 salva `z_u16` in
+`output/cumulative_rank_s1` (il nome cambia con S). Senza `--version` si usa
+v1; per v2 S vale 1 se omesso. `--scale` non è valido con v1.
+Si possono specificare `--input-dir`, `--output-dir`, `--extractor-bin` e
+`--verify`. Entrambe le versioni mantengono i nomi `image_XXXXX.network.npz`.
+
+`--resume` controlla integrità ZIP, array richiesti, rappresentazione e S
+prima di saltare un output esistente; con `--verify` richiede anche che
+l'output precedente sia stato verificato. Non confronta il contenuto del
+file IGD con quello usato in precedenza: dopo una ricompressione usare una
+nuova cartella. Il primo errore interrompe il batch e ne mostra il motivo;
+i file già completati possono essere riutilizzati con `--resume`.
+
+Questa modalità mantiene disponibile il precedente output `--network-npz`
+a due canali. Per il nuovo esperimento, dalla radice di AARHUS:
+
+```powershell
+cargo build --manifest-path src/igd_extract/Cargo.toml --bin igd_extract --target-dir src/gdcompress/target --release --offline --locked
+src/gdcompress/target/release/igd_extract.exe data/cifar-10_compressed_1x1/image_00000.igd --representation cumulative-rank --scale 1 --verify -o output/cumulative_rank_s1/image_00000.npz
+```
+
+`--scale` è un intero in 0..65535, default 1, utilizzabile solo con
+`--representation cumulative-rank`. S=0 produce il solo rango. Sono richiesti
+gruppi 1x1. Senza `-o`, il nome è `INPUT.cumulative-s1.npz` (con S nel nome).
+Un file esistente non viene sovrascritto. L'overflow uint16 interrompe
+l'operazione prima di creare il file: non viene applicato clipping.
+
+Per le basi ordinate si calcola `d[0]=0`, `d[r]=base[r]-base[r-1]`, poi
+`q[r]=round(S*log2(1+d[r])/log2(1+d_max))`, con arrotondamento dei mezzi verso
+l'alto. Se d_max=0 tutti i q sono zero. La somma cumulativa dei q viene
+aggiunta al rango originale, non normalizzato. Infine ogni pixel riceve
+il valore corrispondente alla propria base. Non si pesano i gap per frequenza.
+La convenzione numerica sulle basi è la stessa della versione a due canali.
+
+L'archivio NPZ contiene `z_u16.npy` (un array uint16 little-endian H×W) e
+`metadata.json`: S, formula, convenzioni, dimensioni, numero di basi,
+cumulativa finale, z massimo, sorgente e verifica. Si usa ZIP senza ulteriore
+compressione. Non vengono scritti JSON intermedi su disco; i dati intermedi
+sono costruiti in RAM per la singola immagine. `--verify` verifica i blocchi
+trasformati decodificati, non l'accuracy della rappresentazione.
+
+```python
+import json
+import numpy as np
+from zipfile import ZipFile
+
+path = 'output/cumulative_rank_s1/image_00000.npz'
+with np.load(path, allow_pickle=False) as data:
+    z = data['z_u16']                       # (H, W), uint16
+    x = z.astype(np.float32)[None] / 65535  # (1, H, W), solo al caricamento
+with ZipFile(path) as archive:
+    metadata = json.loads(archive.read('metadata.json'))
+```
+
+Da Python si può richiamare lo stesso comando con `subprocess.run([...],
+check=True)`. La generazione in batch e il training non vengono avviati
+automaticamente. Tenere cartelle distinte per S e per rappresentazione.

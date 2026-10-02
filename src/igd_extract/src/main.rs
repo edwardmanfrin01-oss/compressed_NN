@@ -1,4 +1,6 @@
-use igd_extract::{Options, Result, extract, extract_network_features, write_network_npz};
+use igd_extract::{
+    Options, Result, extract, extract_network_features, write_cumulative_npz, write_network_npz,
+};
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
@@ -9,6 +11,8 @@ Esporta basi, ID spaziali e mappa delle posizioni dei bit in JSON leggibile.
   -o, --output PATH       Default: INPUT.decoded.json, INPUT.network.json, or INPUT.network.npz
   --network-features      Esporta rango e delta ordinati per il primo esperimento di rete
   --network-npz           Esporta rank_u8 e delta_u8 in NPZ, senza JSON intermedio
+  --representation cumulative-rank  Esporta un canale z_u16 in NPZ (gruppi 1x1)
+  --scale S               Intero 0..65535, default 1; solo con cumulative-rank
   --include-deviations   Include anche i bit necessari a ricostruire ogni blocco
   --verify               Confronta tutti i blocchi con il decoder gdcompress
   -h, --help             Mostra questo messaggio
@@ -30,6 +34,8 @@ fn run() -> Result<()> {
     let mut options = Options::default();
     let mut network_features = false;
     let mut network_npz = false;
+    let mut cumulative = false;
+    let mut scale = None;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("-h" | "--help") => {
@@ -44,6 +50,24 @@ fn run() -> Result<()> {
             }
             Some("--network-features") => network_features = true,
             Some("--network-npz") => network_npz = true,
+            Some("--representation") => {
+                let value = args
+                    .next()
+                    .ok_or_else(|| argument_error("Missing representation"))?;
+                if value != "cumulative-rank" {
+                    return Err(argument_error("Supported representation: cumulative-rank"));
+                }
+                cumulative = true;
+            }
+            Some("--scale") => {
+                let value = args.next().ok_or_else(|| argument_error("Missing scale"))?;
+                scale = Some(
+                    value
+                        .to_str()
+                        .and_then(|v| v.parse::<u16>().ok())
+                        .ok_or_else(|| argument_error("Scale must be an integer in 0..65535"))?,
+                );
+            }
             Some("--include-deviations") => options.include_deviations = true,
             Some("--verify") => options.verify = true,
             Some(flag) if flag.starts_with('-') => {
@@ -57,13 +81,27 @@ fn run() -> Result<()> {
             }
         }
     }
-    if network_features && network_npz {
+    if u8::from(network_features) + u8::from(network_npz) + u8::from(cumulative) > 1 {
         return Err(argument_error(
-            "Use only one of --network-features or --network-npz.",
+            "Choose only one output mode: --network-features, --network-npz, or --representation cumulative-rank.",
         ));
     }
+    if scale.is_some() && !cumulative {
+        return Err(argument_error(
+            "--scale requires --representation cumulative-rank",
+        ));
+    }
+    if cumulative && options.include_deviations {
+        return Err(argument_error(
+            "Cumulative NPZ does not include deviations; use --verify for verification",
+        ));
+    }
+    let scale = scale.unwrap_or(1);
     let input = input.ok_or_else(|| argument_error(HELP))?;
     let output = output.unwrap_or_else(|| {
+        if cumulative {
+            return input.with_extension(format!("cumulative-s{scale}.npz"));
+        }
         input.with_extension(if network_npz {
             "network.npz"
         } else if network_features {
@@ -74,6 +112,27 @@ fn run() -> Result<()> {
     });
     if output.exists() {
         return Err(argument_error("This output already exists"));
+    }
+    if cumulative {
+        let summary = write_cumulative_npz(
+            fs::read(&input)?,
+            &input.to_string_lossy(),
+            options,
+            scale,
+            &output,
+        )?;
+        println!(
+            "Saved: {}\nS={scale}; {}x{}; one uint16 channel: {} bytes; NPZ: {} bytes.",
+            output.display(),
+            summary.width,
+            summary.height,
+            summary.tensor_bytes,
+            summary.file_bytes
+        );
+        if options.verify {
+            println!("Full transformed-chunk verification: OK.");
+        }
+        return Ok(());
     }
     if network_npz {
         let summary = write_network_npz(

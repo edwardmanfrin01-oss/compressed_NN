@@ -1,11 +1,13 @@
-"""Export direct IGD-to-network uint8 NPZ features one image at a time."""
+"""Export IGD features: v1 two uint8 channels, v2 cumulative-rank uint16."""
 
 # from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import subprocess
 import time
+from zipfile import ZipFile, BadZipFile
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -13,19 +15,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create compact uint8 rank/delta NPZ files directly from .igd files."
+        description="Export v1 rank/delta or v2 cumulative-rank NPZ files from IGD."
     )
+    parser.add_argument("--version", choices=("v1", "v2"), default="v1",
+                        help="Representation version (default: v1, preserving previous behavior).")
+    parser.add_argument("--scale", type=int,
+                        help="S for v2, integer 0..65535 (default: 1). Not valid for v1.")
     parser.add_argument(
         "--input-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "cifar-10_compressed_pg_1x1",
+        default=PROJECT_ROOT / "data" / "cifar-10_compressed_1x1",
         help="Directory containing 1x1 IGD files.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "output" / "network_features_1x1_v1",
-        help="Directory for compact rank_u8/delta_u8 NPZ files.",
+        help="Default: output/network_features_1x1_v1 or output/v2_cumulative_rank_sX for v2. (X is the 'scale value' selected)",
     )
     parser.add_argument(
         "--extractor-bin",
@@ -41,9 +46,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="Skip NPZ files already present in the output directory.",
+        help="Skip existing NPZs after checking integrity, representation and scale.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.scale is not None and args.version != "v2":
+        parser.error("--scale is only valid with --version v2")
+    if args.scale is not None and not 0 <= args.scale <= 65535:
+        parser.error("--scale must be in 0..65535")
+    if args.version == "v2" and args.scale is None:
+        args.scale = 1
+    if args.output_dir is None:
+        name = "v1_network_features_1x1" if args.version == "v1" else f"v2_cumulative_rank_s{args.scale}"
+        args.output_dir = PROJECT_ROOT / "output" / name
+    return args
+
+
+def validate_existing(path: Path, args: argparse.Namespace) -> None:
+    """Never silently resume a different representation or a damaged archive."""
+    try:
+        with ZipFile(path) as archive:
+            if archive.testzip() is not None:
+                raise ValueError("ZIP integrity check failed")
+            metadata = json.loads(archive.read("metadata.json"))
+            expected = ("sorted-base-rank-and-delta-u8-v1" if args.version == "v1"
+                        else "cumulative-rank-u16-v1")
+            representation = metadata.get("representation", {})
+            if representation.get("name") != expected:
+                raise ValueError("representation differs from --version")
+            if args.version == "v2" and representation.get("scale") != args.scale:
+                raise ValueError("scale differs from --scale")
+            required = ("rank_u8.npy", "delta_u8.npy") if args.version == "v1" else ("z_u16.npy",)
+            if any(name not in archive.namelist() for name in required):
+                raise ValueError("missing tensor array")
+            if args.verify and not metadata.get("verification", {}).get("passed", False):
+                raise ValueError("existing file was not exported with --verify")
+    except (OSError, BadZipFile, ValueError, KeyError, AttributeError) as error:
+        raise SystemExit(f"Cannot resume {path}: {error}. Use a different output directory or inspect this file.") from error
 
 
 def main() -> None:
@@ -60,6 +98,7 @@ def main() -> None:
         raise SystemExit(f"No IGD files found in: {args.input_dir}")
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
+    print(f"Version: {args.version}" + (f"; S={args.scale}" if args.version == "v2" else ""))
     print(f"Found {len(input_files)} IGD files")
     print(f"Output directory: {args.output_dir}")
     start_time = time.monotonic()
@@ -69,7 +108,10 @@ def main() -> None:
         output_path = args.output_dir / f"{input_path.stem}.network.npz"
         if output_path.exists():
             if args.resume:
+                validate_existing(output_path, args)
                 skipped += 1
+                if index % 500 == 0 or index == len(input_files):
+                    print(f"Processed {index}/{len(input_files)} files", flush=True)
                 continue
             raise SystemExit(
                 f"Output already exists: {output_path}. Use --resume to skip existing files."
@@ -77,19 +119,21 @@ def main() -> None:
         command = [
             str(args.extractor_bin),
             str(input_path),
-            "--network-npz",
             "-o",
             str(output_path),
         ]
+        command.extend(["--network-npz"] if args.version == "v1" else
+                       ["--representation", "cumulative-rank", "--scale", str(args.scale)])
         if args.verify:
             command.append("--verify")
         try:
-            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(command, check=True, stdout=subprocess.DEVNULL,
+                           stderr=subprocess.PIPE, text=True)
         except subprocess.CalledProcessError as error:
-            raise SystemExit(f"Feature export failed for {input_path.name}: {error}") from error
+            raise SystemExit(f"Feature export failed for {input_path.name}:\n{error.stderr}") from error
         exported += 1
         if index % 500 == 0 or index == len(input_files):
-            print(f"Processed {index}/{len(input_files)} files")
+            print(f"Processed {index}/{len(input_files)} files", flush=True)
 
     elapsed = time.monotonic() - start_time
     print(f"Exported: {exported}; skipped: {skipped}; elapsed: {elapsed:.2f}s")

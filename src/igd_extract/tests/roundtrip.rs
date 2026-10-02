@@ -9,6 +9,14 @@ use image::{DynamicImage, Rgb, RgbImage};
 use serde_json::Value;
 
 fn fixture(transform: ImageGroupingTransform, constant: bool) -> (BitDataSet, PreEncodeContext) {
+    fixture_grouped(transform, constant, PixelGrouping::new(3, 3))
+}
+
+fn fixture_grouped(
+    transform: ImageGroupingTransform,
+    constant: bool,
+    grouping: PixelGrouping,
+) -> (BitDataSet, PreEncodeContext) {
     // Odd dimensions exercise partial edge groups. Restricted channel ranges
     // create both constant-zero and constant-one bits in the raw representation.
     // No partial groups for the constant-only case: padding at image borders
@@ -31,7 +39,7 @@ fn fixture(transform: ImageGroupingTransform, constant: bool) -> (BitDataSet, Pr
         } else {
             ImageColorModel::YCoCgR
         },
-        pixel_grouping: PixelGrouping::new(3, 3),
+        pixel_grouping: grouping,
         grouping_transform: transform,
         ..Default::default()
     }
@@ -83,6 +91,73 @@ fn encode(context: PreEncodeContext, encoding: usize, dictionary: usize) -> Vec<
         .unwrap()
         .as_bytes()
         .to_vec()
+}
+
+#[test]
+fn cumulative_maps_original_ids_and_preserves_constant_case() {
+    use igd_extract::extract_cumulative_u16;
+    for constant in [false, true] {
+        let (_, context) = fixture_grouped(
+            ImageGroupingTransform::Raw,
+            constant,
+            PixelGrouping::new(1, 1),
+        );
+        for encoding in 0..3 {
+            for codec in 0..3 {
+                let bytes = encode(context.clone(), encoding, codec);
+                let doc = extract(bytes.clone(), "fixture", Options::default()).unwrap();
+                let mut bases: Vec<_> = doc["bases"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|b| {
+                        (
+                            u64::from_str_radix(b["bits"].as_str().unwrap(), 2).unwrap(),
+                            b["id"].as_u64().unwrap() as usize,
+                        )
+                    })
+                    .collect();
+                bases.sort();
+                let gaps: Vec<_> = bases.windows(2).map(|p| p[1].0 - p[0].0).collect();
+                let max = *gaps.iter().max().unwrap_or(&0);
+                for scale in [0, 1, 3] {
+                    let mut lookup = vec![0u16; bases.len()];
+                    let mut cumulative = 0u16;
+                    for (r, &(_, id)) in bases.iter().enumerate() {
+                        if r > 0 {
+                            cumulative += (f64::from(scale) * ((gaps[r - 1] + 1) as f64).log2()
+                                / ((max + 1) as f64).log2())
+                            .round() as u16;
+                        }
+                        lookup[id] = r as u16 + cumulative;
+                    }
+                    let result = extract_cumulative_u16(
+                        bytes.clone(),
+                        "fixture",
+                        Options {
+                            verify: true,
+                            include_deviations: false,
+                        },
+                        scale,
+                    )
+                    .unwrap();
+                    let expected: Vec<_> = context
+                        .row_to_base_id
+                        .iter()
+                        .map(|id| lookup[*id])
+                        .collect();
+                    assert_eq!(result.z_u16, expected);
+                    if constant {
+                        assert!(result.z_u16.iter().all(|v| *v == 0));
+                    }
+                }
+            }
+        }
+    }
+    let (_, grouped) = fixture(ImageGroupingTransform::Raw, false);
+    assert!(
+        extract_cumulative_u16(encode(grouped, 0, 0), "grouped", Options::default(), 1).is_err()
+    );
 }
 
 #[test]
