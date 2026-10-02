@@ -20,13 +20,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "cifar-10_resized",
+        default=PROJECT_ROOT / "data" / "cifar-10_resized/test",
         help="Directory containing PNG images.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "cifar-10_compressed_1x1",
+        default=PROJECT_ROOT / "data" / "cifar-10_compressed_1x1/test",
         help="Directory for IGD files; the default is dedicated to the 1x1 experiment.",
     )
     parser.add_argument(

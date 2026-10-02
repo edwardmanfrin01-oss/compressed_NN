@@ -11,15 +11,19 @@ from torchvision import transforms
 
 
 DATASET_PATH = "data/cifar-10-python.tar.gz"
-OUTPUT_DIR = "data/cifar-10_resized"
-LABELS_FILE = "data/resized/labels.json"
+OUTPUT_DIR = "data/cifar-10_resized/test"
+LABELS_FILE = "data/resized/cifar-10_labels.json"
 
-BATCH_NAMES = [
+BATCH_NAMES_TRAIN = [
     "data_batch_1",
     "data_batch_2",
     "data_batch_3",
     "data_batch_4",
     "data_batch_5"
+]
+
+BATCH_NAMES_TEST = [
+    "test_batch"
 ]
 
 
@@ -52,7 +56,7 @@ with tarfile.open(DATASET_PATH, "r:gz") as tar:
 
     image_index = 0
 
-    for batch_name in BATCH_NAMES:
+    for batch_name in BATCH_NAMES_TEST:
 
         print(f"Processing {batch_name}...")
 
@@ -76,7 +80,7 @@ with tarfile.open(DATASET_PATH, "r:gz") as tar:
 
         # Process one image at a time
         for image_data, label in zip(data, labels):
-
+            
             # CIFAR-10 stores images as:
             # (3, 32, 32)
             image_data = image_data.reshape(3, 32, 32)
