@@ -22,7 +22,7 @@ with tarfile.open(DATASET_PATH, "r:gz") as tar:
     file_object = tar.extractfile(member)
 
     if file_object is None:
-        raise RuntimeError("Impossibile leggere data_batch_1")
+        raise RuntimeError("Impossible to read data_batch_1")
 
     batch = pickle.load(file_object, encoding="bytes")
 

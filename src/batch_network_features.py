@@ -1,4 +1,9 @@
-"""Export IGD features: v1 two uint8 channels, v2 cumulative-rank uint16."""
+"""
+Export IGD features: v1 two uint8 channels, v2 cumulative-rank uint16.
+
+USAGE:
+    python src/batch_network_features.py [--version v1|v2] [--scale S] [--input-dir DIR] [--output-dir DIR] [--extractor-bin PATH] [--verify] [--resume]
+"""
 
 # from __future__ import annotations
 
@@ -132,7 +137,7 @@ def main() -> None:
         except subprocess.CalledProcessError as error:
             raise SystemExit(f"Feature export failed for {input_path.name}:\n{error.stderr}") from error
         exported += 1
-        if index % 500 == 0 or index == len(input_files):
+        if index % 1000 == 0 or index == len(input_files):
             print(f"Processed {index}/{len(input_files)} files", flush=True)
 
     elapsed = time.monotonic() - start_time
