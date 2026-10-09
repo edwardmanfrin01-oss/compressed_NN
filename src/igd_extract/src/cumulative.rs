@@ -22,11 +22,64 @@ fn cumulative_values(normalized: &[f64], scale: u16) -> Result<Vec<u16>> {
     }).collect()
 }
 
+// The maximum normalized gap is one, so no admissible scale exceeds 65535.
+fn adaptive_scale(normalized: &[f64]) -> Result<u16> {
+    if normalized.is_empty() || normalized.len() > 65536 {
+        return Err(invalid("Adaptive representation requires 1..65536 bases"));
+    }
+    if normalized
+        .iter()
+        .any(|a| !a.is_finite() || !(0.0..=1.0).contains(a))
+        || normalized[0] != 0.0
+        || (normalized.len() > 1 && !normalized.contains(&1.0))
+    {
+        return Err(invalid("Invalid normalized dictionary gaps"));
+    }
+    if normalized.len() == 1 {
+        return Ok(0);
+    }
+    let fits = |s: u32| {
+        normalized.len() as u64 - 1
+            + normalized
+                .iter()
+                .map(|a| (f64::from(s) * a).floor() as u64)
+                .sum::<u64>()
+            <= 65535
+    };
+    let (mut low, mut high) = (0u32, 65535u32);
+    while low < high {
+        let mid = low + (high - low + 1) / 2;
+        if fits(mid) {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    Ok(low as u16)
+}
+
+pub fn extract_adaptive_cumulative_u16(
+    bytes: Vec<u8>,
+    source: &str,
+    options: Options,
+) -> Result<CumulativeU16> {
+    extract_cumulative_impl(bytes, source, options, None)
+}
+
 pub fn extract_cumulative_u16(
     bytes: Vec<u8>,
     source: &str,
     options: Options,
     scale: u16,
+) -> Result<CumulativeU16> {
+    extract_cumulative_impl(bytes, source, options, Some(scale))
+}
+
+fn extract_cumulative_impl(
+    bytes: Vec<u8>,
+    source: &str,
+    options: Options,
+    fixed_scale: Option<u16>,
 ) -> Result<CumulativeU16> {
     // Reuse the exact ordering and bit-layout interpretation of the baseline.
     // Intermediate data live only in memory, one image at a time.
@@ -60,7 +113,24 @@ pub fn extract_cumulative_u16(
             })
         })
         .collect::<Result<_>>()?;
-    let lookup = cumulative_values(&normalized, scale)?;
+    let adaptive = fixed_scale.is_none();
+    let scale = match fixed_scale {
+        Some(s) => s,
+        None => adaptive_scale(&normalized)?,
+    };
+    let lookup = if adaptive {
+        let mut sum = 0u64;
+        normalized
+            .iter()
+            .enumerate()
+            .map(|(rank, a)| {
+                sum += (f64::from(scale) * a).floor() as u64;
+                u16::try_from(rank as u64 + sum).map_err(|_| invalid("Adaptive uint16 overflow"))
+            })
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        cumulative_values(&normalized, scale)?
+    };
     let rows = document["spatial_rank_ids"]
         .as_array()
         .ok_or_else(|| invalid("Missing spatial ranks"))?;
@@ -79,7 +149,7 @@ pub fn extract_cumulative_u16(
         }
     }
     let z_max = *lookup.last().ok_or_else(|| invalid("Empty dictionary"))?;
-    let metadata = json!({
+    let mut metadata = json!({
         "schema": "igd-cumulative-rank-npz-v1",
         "extractor_version": env!("CARGO_PKG_VERSION"),
         "source": document["source"], "image": document["image"],
@@ -98,6 +168,17 @@ pub fn extract_cumulative_u16(
         "base_min_bits": document["base_min_bits"], "base_max_bits": document["base_max_bits"],
         "max_delta_bits": document["max_delta_bits"]
     });
+    if adaptive {
+        metadata["schema"] = json!("igd-cumulative-rank-npz-v3");
+        metadata["representation"]["name"] = json!("cumulative-rank-u16-v3");
+        metadata["representation"]["scale_selection"] = json!("maximum-feasible-integer");
+        metadata["representation"]["formula"] = json!(
+            "a_r=log2(1+d_r)/log2(1+d_max); q_r=floor(S_i*a_r); c_r=sum(q_0..q_r); z_r=r+c_r"
+        );
+        metadata["representation"]["rounding"] = json!("floor before cumulative sum");
+        metadata["representation"]["scale_limit"] = json!(65535);
+        metadata["representation"]["single_base_scale"] = json!(0);
+    }
     Ok(CumulativeU16 {
         width,
         height,
@@ -115,6 +196,23 @@ pub fn write_cumulative_npz<P: AsRef<Path>>(
 ) -> Result<NetworkNpzSummary> {
     // Validate all values before opening any output file.
     let data = extract_cumulative_u16(bytes, source, options, scale)?;
+    write_cumulative_data(data, output_path)
+}
+
+pub fn write_adaptive_cumulative_npz<P: AsRef<Path>>(
+    bytes: Vec<u8>,
+    source: &str,
+    options: Options,
+    output_path: P,
+) -> Result<NetworkNpzSummary> {
+    let data = extract_adaptive_cumulative_u16(bytes, source, options)?;
+    write_cumulative_data(data, output_path)
+}
+
+fn write_cumulative_data<P: AsRef<Path>>(
+    data: CumulativeU16,
+    output_path: P,
+) -> Result<NetworkNpzSummary> {
     let raw: Vec<u8> = data.z_u16.iter().flat_map(|v| v.to_le_bytes()).collect();
     let npy = npy_2d(data.width, data.height, &raw, "<u2", 2)?;
     let path = output_path.as_ref();
@@ -148,6 +246,33 @@ pub fn write_cumulative_npz<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn adaptive_boundaries_and_optimality() {
+        assert_eq!(adaptive_scale(&[0.0]).unwrap(), 0);
+        assert_eq!(adaptive_scale(&[0.0, 1.0]).unwrap(), 65534);
+        assert_eq!(adaptive_scale(&[0.0, 0.5, 1.0]).unwrap(), 43689);
+        assert!(adaptive_scale(&[]).is_err());
+        assert!(adaptive_scale(&[0.0, f64::NAN]).is_err());
+        let mut full = vec![1.0; 65536];
+        full[0] = 0.0;
+        assert_eq!(adaptive_scale(&full).unwrap(), 0);
+        full.push(1.0);
+        assert!(adaptive_scale(&full).is_err());
+        for n in [2, 3, 17, 1024] {
+            let mut gaps: Vec<_> = (0..n).map(|r| r as f64 / (n - 1) as f64).collect();
+            gaps[0] = 0.0;
+            let s = adaptive_scale(&gaps).unwrap() as u32;
+            let z = |s| {
+                n as u64 - 1
+                    + gaps
+                        .iter()
+                        .map(|a| (s as f64 * a).floor() as u64)
+                        .sum::<u64>()
+            };
+            assert!(z(s) <= 65535);
+            assert!(z(s + 1) > 65535);
+        }
+    }
     #[test]
     fn known_cumulative_and_boundaries() {
         assert_eq!(

@@ -13,7 +13,10 @@ use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
 mod cumulative;
-pub use cumulative::{CumulativeU16, extract_cumulative_u16, write_cumulative_npz};
+pub use cumulative::{
+    CumulativeU16, extract_adaptive_cumulative_u16, extract_cumulative_u16,
+    write_adaptive_cumulative_npz, write_cumulative_npz,
+};
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
 

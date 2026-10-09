@@ -120,6 +120,50 @@ fn cumulative_maps_original_ids_and_preserves_constant_case() {
                 bases.sort();
                 let gaps: Vec<_> = bases.windows(2).map(|p| p[1].0 - p[0].0).collect();
                 let max = *gaps.iter().max().unwrap_or(&0);
+                let adaptive = igd_extract::extract_adaptive_cumulative_u16(
+                    bytes.clone(),
+                    "fixture",
+                    Options {
+                        verify: true,
+                        include_deviations: false,
+                    },
+                )
+                .unwrap();
+                let metadata: Value = serde_json::from_slice(&adaptive.metadata_json).unwrap();
+                let scale = metadata["representation"]["scale"].as_u64().unwrap();
+                assert_eq!(metadata["representation"]["name"], "cumulative-rank-u16-v3");
+                let mut lookup = vec![0u16; bases.len()];
+                let mut sum = 0u64;
+                for (r, &(_, id)) in bases.iter().enumerate() {
+                    if r > 0 {
+                        sum += (scale as f64 * ((gaps[r - 1] + 1) as f64).log2()
+                            / ((max + 1) as f64).log2())
+                        .floor() as u64;
+                    }
+                    lookup[id] = u16::try_from(r as u64 + sum).unwrap();
+                }
+                assert_eq!(
+                    adaptive.z_u16,
+                    context
+                        .row_to_base_id
+                        .iter()
+                        .map(|id| lookup[*id])
+                        .collect::<Vec<_>>()
+                );
+                if constant {
+                    assert_eq!(scale, 0);
+                } else {
+                    let next = bases.len() as u64 - 1
+                        + gaps
+                            .iter()
+                            .map(|d| {
+                                ((scale + 1) as f64 * ((*d + 1) as f64).log2()
+                                    / ((max + 1) as f64).log2())
+                                .floor() as u64
+                            })
+                            .sum::<u64>();
+                    assert!(next > 65535);
+                }
                 for scale in [0, 1, 3] {
                     let mut lookup = vec![0u16; bases.len()];
                     let mut cumulative = 0u16;

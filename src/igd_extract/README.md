@@ -353,3 +353,34 @@ with ZipFile(path) as archive:
 Da Python si può richiamare lo stesso comando con `subprocess.run([...],
 check=True)`. La generazione in batch e il training non vengono avviati
 automaticamente. Tenere cartelle distinte per S e per rappresentazione.
+
+
+## V3: scala adattiva per immagine
+
+La v3 conserva ranghi e delta `a_r=log2(1+d_r)/log2(1+d_max)` e usa
+`q_r=floor(S_i*a_r)`, `z_r=r+sum(q_0..q_r)`. Una ricerca binaria sceglie
+il massimo S_i intero non negativo con `K-1+sum(q)<=65535`, considerando
+anche la distribuzione dei gap. V1 e V2 mantengono il comportamento precedente
+(in particolare V2 usa round, non floor).
+
+Una base: S_i=0 e canale nullo. Due basi: S_i=65534. Fino a 65536 basi
+si ammette S_i=0; oltre tale numero l'esportazione fallisce senza clipping.
+
+```powershell
+cargo build --manifest-path src/igd_extract/Cargo.toml --bin igd_extract --target-dir src/gdcompress/target --release --offline --locked
+python src/batch_network_features.py --version v3 --input-dir data/cifar-10_compressed_1x1 --output-dir output/v3_cumulative_rank_adaptive --verify
+```
+
+V3 non accetta `--scale`. Per riprendere aggiungere `--resume`: vengono
+controllati integrita ZIP, rappresentazione, metadati di scala e verifica richiesta.
+Il comando diretto usa `--representation cumulative-rank-adaptive`.
+
+Ogni NPZ contiene `z_u16.npy` e `metadata.json`, con `representation.scale`,
+formula, metodo di selezione, K (`num_bases`) e `z_max`. Nome rappresentazione:
+`cumulative-rank-u16-v3`. Per la rete resta utilizzabile `float32(z_u16)/65535`.
+
+A completamento del batch, `scales_v3.csv` raccoglie input, output, S_i, K_i,
+z_max per tutti gli input del comando, inclusi quelli saltati con resume.
+Il CSV viene rigenerato atomicamente; in caso di interruzione i metadati nei
+singoli NPZ restano la fonte dei valori, e il CSV precedente puo essere incompleto.
+Non serve caricare il CSV per usare i tensori nella rete.

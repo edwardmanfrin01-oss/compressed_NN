@@ -1,5 +1,6 @@
 use igd_extract::{
-    Options, Result, extract, extract_network_features, write_cumulative_npz, write_network_npz,
+    Options, Result, extract, extract_network_features, write_adaptive_cumulative_npz,
+    write_cumulative_npz, write_network_npz,
 };
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufWriter, Write};
@@ -12,6 +13,7 @@ Esporta basi, ID spaziali e mappa delle posizioni dei bit in JSON leggibile.
   --network-features      Esporta rango e delta ordinati per il primo esperimento di rete
   --network-npz           Esporta rank_u8 e delta_u8 in NPZ, senza JSON intermedio
   --representation cumulative-rank  Esporta un canale z_u16 in NPZ (gruppi 1x1)
+  --representation cumulative-rank-adaptive  V3: S_i automatico, floor, uint16
   --scale S               Intero 0..65535, default 1; solo con cumulative-rank
   --include-deviations   Include anche i bit necessari a ricostruire ogni blocco
   --verify               Confronta tutti i blocchi con il decoder gdcompress
@@ -35,6 +37,7 @@ fn run() -> Result<()> {
     let mut network_features = false;
     let mut network_npz = false;
     let mut cumulative = false;
+    let mut adaptive = false;
     let mut scale = None;
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -54,9 +57,12 @@ fn run() -> Result<()> {
                 let value = args
                     .next()
                     .ok_or_else(|| argument_error("Missing representation"))?;
-                if value != "cumulative-rank" {
-                    return Err(argument_error("Supported representation: cumulative-rank"));
+                if value != "cumulative-rank" && value != "cumulative-rank-adaptive" {
+                    return Err(argument_error(
+                        "Supported representations: cumulative-rank, cumulative-rank-adaptive",
+                    ));
                 }
+                adaptive = value == "cumulative-rank-adaptive";
                 cumulative = true;
             }
             Some("--scale") => {
@@ -86,7 +92,7 @@ fn run() -> Result<()> {
             "Choose only one output mode: --network-features, --network-npz, or --representation cumulative-rank.",
         ));
     }
-    if scale.is_some() && !cumulative {
+    if scale.is_some() && (!cumulative || adaptive) {
         return Err(argument_error(
             "--scale requires --representation cumulative-rank",
         ));
@@ -99,6 +105,9 @@ fn run() -> Result<()> {
     let scale = scale.unwrap_or(1);
     let input = input.ok_or_else(|| argument_error(HELP))?;
     let output = output.unwrap_or_else(|| {
+        if adaptive {
+            return input.with_extension("cumulative-v3.npz");
+        }
         if cumulative {
             return input.with_extension(format!("cumulative-s{scale}.npz"));
         }
@@ -114,16 +123,30 @@ fn run() -> Result<()> {
         return Err(argument_error("This output already exists"));
     }
     if cumulative {
-        let summary = write_cumulative_npz(
-            fs::read(&input)?,
-            &input.to_string_lossy(),
-            options,
-            scale,
-            &output,
-        )?;
+        let summary = if adaptive {
+            write_adaptive_cumulative_npz(
+                fs::read(&input)?,
+                &input.to_string_lossy(),
+                options,
+                &output,
+            )?
+        } else {
+            write_cumulative_npz(
+                fs::read(&input)?,
+                &input.to_string_lossy(),
+                options,
+                scale,
+                &output,
+            )?
+        };
         println!(
-            "Saved: {}\nS={scale}; {}x{}; one uint16 channel: {} bytes; NPZ: {} bytes.",
+            "Saved: {}\n{}; {}x{}; one uint16 channel: {} bytes; NPZ: {} bytes.",
             output.display(),
+            if adaptive {
+                "S_i automatic (see metadata)".to_string()
+            } else {
+                format!("S={scale}")
+            },
             summary.width,
             summary.height,
             summary.tensor_bytes,
