@@ -4,7 +4,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 
 # 1. Carica l'immagine con PIL in modalità RGB
-img_pil_rgb = Image.open('data/cifar-10_resized/image_00000.png').convert('RGB')
+img_pil_rgb = Image.open('data/cifar-10_resized/train/image_00000.png').convert('RGB')
 
 # 2. Converti l'immagine PIL nello spazio colore YCbCr
 img_pil_ycbcr = img_pil_rgb.convert('YCbCr')
