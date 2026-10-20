@@ -13,6 +13,7 @@ import time
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Compress images with gdcompress without mixing grouping configurations."
