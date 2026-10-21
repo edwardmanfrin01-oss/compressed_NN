@@ -1,9 +1,10 @@
 import os
 from PIL import Image
+from timeit import default_timer as timer
 
 
-DATASET_PATH = "data/cifar-10_resized/test"
-OUTPUT_DIR = "data/cifar-10_resized_YCbCr/test"
+DATASET_PATH = "data/cifar-10_resized/train"
+OUTPUT_DIR = "data/cifar-10_resized_YCbCr/train"
 
 
 # output dir
@@ -11,6 +12,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 image_index = 0
 
+start_time = timer()
 for image in os.listdir(DATASET_PATH):
 
     if not image.lower().endswith(".png"):
@@ -32,11 +34,13 @@ for image in os.listdir(DATASET_PATH):
     img_png.save(output_path, format="PNG")
 
     image_index += 1
-    if image_index > 99:
-        break  # Limit to 100 images for testing purposes
+    if image_index % 1000 == 0:
+        print(f"  {image_index} images processed")
 
+end_time = timer() - start_time
 
 print(f"  {image_index} images processed")
+print(f"Processing time: {end_time:.1f}s")
 
 
 # print details
