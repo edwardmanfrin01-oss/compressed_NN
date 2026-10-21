@@ -1,68 +1,40 @@
-
-import tarfile
-import pickle
 import os
-import json
-
 from PIL import Image
-from torchvision import transforms
 
 
 DATASET_PATH = "data/cifar-10_resized/test"
 OUTPUT_DIR = "data/cifar-10_resized_YCbCr/test"
-LABELS_FILE = "data/cifar-10_resized/cifar-10_labels.json"
 
-
-# CIFAR-10 classes
-
-CLASSES = [
-    "airplane",
-    "automobile",
-    "bird",
-    "cat",
-    "deer",
-    "dog",
-    "frog",
-    "horse",
-    "ship",
-    "truck"
-]
 
 # output dir
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-
-all_labels = []
-
 image_index = 0
 
 for image in os.listdir(DATASET_PATH):
-    img_rgb = Image.open(os.path.join(DATASET_PATH, image)).convert('RGB')
-    img_ycbcr = img_rgb.convert('YCbCr')
 
-    # Save as lossless jpg
-    output_path = os.path.join(
-        OUTPUT_DIR,
-        f"image_{image_index:05d}.JPEG"  # Use .jpg extension for YCbCr images
-    )
+    if not image.lower().endswith(".png"):
+        continue
+    if not os.path.isfile(os.path.join(DATASET_PATH, image)):
+        continue
+    
+    with Image.open(os.path.join(DATASET_PATH, image)) as source:
+        img_rgb = source.convert("RGB")
+        img_ycbcr = img_rgb.convert("YCbCr")
 
-    img_ycbcr.save(
-        output_path,
-        format="JPEG"
-    )
+    # Store the three channels Y, Cb and Cr as three RGB channels in a png file
+    y, cb, cr = img_ycbcr.split()
+    img_png = Image.merge("RGB", (y, cb, cr))
 
-    label = json.load(open(LABELS_FILE, "r"))[image_index]["label"]
+    output_name = os.path.splitext(image)[0] + ".png"
+    output_path = os.path.join(OUTPUT_DIR, output_name)
 
-    # Store the label associated with this image
-    all_labels.append({
-        "file": f"image_{image_index:05d}.JPEG",
-        "label": label,
-        "class": CLASSES[label]
-    })
+    img_png.save(output_path, format="PNG")
 
     image_index += 1
-    if image_index > 100:
+    if image_index > 99:
         break  # Limit to 100 images for testing purposes
+
 
 print(f"  {image_index} images processed")
 
@@ -71,4 +43,3 @@ print(f"  {image_index} images processed")
 print("\nProcessing completed!")
 print(f"Total images: {image_index}")
 print(f"Images saved to: {OUTPUT_DIR}")
-print(f"Labels saved to: {LABELS_FILE}")
