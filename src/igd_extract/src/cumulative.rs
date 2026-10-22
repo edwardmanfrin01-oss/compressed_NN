@@ -63,7 +63,11 @@ pub fn extract_adaptive_cumulative_u16(
     source: &str,
     options: Options,
 ) -> Result<CumulativeU16> {
-    extract_cumulative_impl(bytes, source, options, None)
+    extract_cumulative_impl(bytes, source, options, None, false)
+}
+
+pub fn extract_interleaved_cumulative_u16(bytes: Vec<u8>, source: &str, options: Options) -> Result<CumulativeU16> {
+    extract_cumulative_impl(bytes, source, options, None, true)
 }
 
 pub fn extract_cumulative_u16(
@@ -72,7 +76,7 @@ pub fn extract_cumulative_u16(
     options: Options,
     scale: u16,
 ) -> Result<CumulativeU16> {
-    extract_cumulative_impl(bytes, source, options, Some(scale))
+    extract_cumulative_impl(bytes, source, options, Some(scale), false)
 }
 
 fn extract_cumulative_impl(
@@ -80,10 +84,11 @@ fn extract_cumulative_impl(
     source: &str,
     options: Options,
     fixed_scale: Option<u16>,
+    interleaved: bool,
 ) -> Result<CumulativeU16> {
     // Reuse the exact ordering and bit-layout interpretation of the baseline.
     // Intermediate data live only in memory, one image at a time.
-    let document = extract_network_features(bytes, source, options)?;
+    let document = extract_network_features_ordered(bytes, source, options, interleaved)?;
     if document["image"]["pixel_group_width"] != 1 || document["image"]["pixel_group_height"] != 1 {
         return Err(invalid("cumulative-rank requires pixel grouping 1x1."));
     }
@@ -179,6 +184,16 @@ fn extract_cumulative_impl(
         metadata["representation"]["scale_limit"] = json!(65535);
         metadata["representation"]["single_base_scale"] = json!(0);
     }
+    if interleaved {
+        metadata["schema"] = json!("igd-cumulative-rank-npz-v4");
+        metadata["representation"]["name"] = json!("cumulative-rank-u16-v4");
+        metadata["representation"]["bit_order"] = json!("msb-first-channel-interleaved");
+        metadata["representation"]["base_order"] = json!("Selected positions ordered by descending bit significance, then channel; ascending numeric permuted bases");
+        metadata["representation"]["index_origin"] = json!(0);
+        metadata["representation"]["base_bit_positions"] = document["representation"]["base_bit_positions"].clone();
+        metadata["representation"]["original_base_bit_positions"] = document["representation"]["original_base_bit_positions"].clone();
+        metadata["representation"]["base_value_bit_width"] = document["representation"]["base_value_bit_width"].clone();
+    }
     Ok(CumulativeU16 {
         width,
         height,
@@ -207,6 +222,10 @@ pub fn write_adaptive_cumulative_npz<P: AsRef<Path>>(
 ) -> Result<NetworkNpzSummary> {
     let data = extract_adaptive_cumulative_u16(bytes, source, options)?;
     write_cumulative_data(data, output_path)
+}
+
+pub fn write_interleaved_cumulative_npz<P: AsRef<Path>>(bytes: Vec<u8>, source: &str, options: Options, output_path: P) -> Result<NetworkNpzSummary> {
+    write_cumulative_data(extract_interleaved_cumulative_u16(bytes, source, options)?, output_path)
 }
 
 fn write_cumulative_data<P: AsRef<Path>>(

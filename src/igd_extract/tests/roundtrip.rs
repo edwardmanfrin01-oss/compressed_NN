@@ -482,3 +482,51 @@ fn command_writes_valid_json_and_refuses_overwrite_or_truncated_input() {
     std::fs::remove_file(&input).unwrap();
     std::fs::remove_dir(&folder).unwrap();
 }
+
+#[test]
+fn interleaved_v4_matches_independent_bit_weight_reference() {
+    for transform in [ImageGroupingTransform::Raw, ImageGroupingTransform::ForFirstPixel] {
+        for constant in [false, true] {
+            let (_, context) = fixture_grouped(transform, constant, PixelGrouping::new(1, 1));
+            for encoding in 0..3 {
+                for codec in 0..3 {
+                    let bytes = encode(context.clone(), encoding, codec);
+                    let doc = extract(bytes.clone(), "fixture", Options::default()).unwrap();
+                    let positions = doc["base_bit_positions"].as_array().unwrap();
+                    // Full 24-bit significance order, filtered to the selected positions.
+                    let order: Vec<u64> = (0..8).rev().flat_map(|bit| [bit, bit+8, bit+16])
+                        .filter(|p| positions.contains(&Value::from(*p))).collect();
+                    let mut bases: Vec<(u64, usize)> = doc["bases"].as_array().unwrap().iter().map(|b| {
+                        let bits = b["bits"].as_str().unwrap().as_bytes();
+                        let value = order.iter().fold(0, |value, p| {
+                            let index = positions.iter().position(|v| v.as_u64() == Some(*p)).unwrap();
+                            value * 2 + u64::from(bits[index] == b'1')
+                        });
+                        (value, b["id"].as_u64().unwrap() as usize)
+                    }).collect();
+                    bases.sort();
+                    let gaps: Vec<_> = bases.windows(2).map(|p| p[1].0-p[0].0).collect();
+                    let max = *gaps.iter().max().unwrap_or(&0);
+                    let normalized: Vec<_> = gaps.iter().map(|d| ((*d+1) as f64).log2()/((max+1) as f64).log2()).collect();
+                    let result = igd_extract::extract_interleaved_cumulative_u16(bytes, "fixture", Options { verify: true, include_deviations: false }).unwrap();
+                    let meta: Value = serde_json::from_slice(&result.metadata_json).unwrap();
+                    assert_eq!(meta["representation"]["base_bit_positions"], serde_json::json!(order));
+                    assert_eq!(meta["representation"]["name"], "cumulative-rank-u16-v4");
+                    let scale = meta["representation"]["scale"].as_u64().unwrap();
+                    let mut lookup = vec![0; bases.len()];
+                    let mut sum = 0;
+                    for (rank, &(_, id)) in bases.iter().enumerate() {
+                        if rank > 0 { sum += (scale as f64 * normalized[rank-1]).floor() as u64; }
+                        lookup[id] = u16::try_from(rank as u64 + sum).unwrap();
+                    }
+                    let expected: Vec<_> = doc["sample_base_ids"].as_array().unwrap().iter().map(|id| lookup[id.as_u64().unwrap() as usize]).collect();
+                    assert_eq!(result.z_u16, expected);
+                    if bases.len() == 1 { assert_eq!(scale, 0); }
+                    else { assert!(bases.len() as u64 - 1 + normalized.iter().map(|a| ((scale+1) as f64*a).floor() as u64).sum::<u64>() > 65535); }
+                }
+            }
+        }
+    }
+    let (_, grouped) = fixture(ImageGroupingTransform::Raw, false);
+    assert!(igd_extract::extract_interleaved_cumulative_u16(encode(grouped, 0, 0), "grouped", Options::default()).is_err());
+}

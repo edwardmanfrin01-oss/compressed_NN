@@ -1,6 +1,6 @@
 use igd_extract::{
     Options, Result, extract, extract_network_features, write_adaptive_cumulative_npz,
-    write_cumulative_npz, write_network_npz,
+    write_cumulative_npz, write_network_npz, write_interleaved_cumulative_npz,
 };
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufWriter, Write};
@@ -14,6 +14,7 @@ Esporta basi, ID spaziali e mappa delle posizioni dei bit in JSON leggibile.
   --network-npz           Esporta rank_u8 e delta_u8 in NPZ, senza JSON intermedio
   --representation cumulative-rank  Esporta un canale z_u16 in NPZ (gruppi 1x1)
   --representation cumulative-rank-adaptive  V3: S_i automatico, floor, uint16
+  --representation cumulative-rank-interleaved  V4: formula V3, MSB-first alternato tra canali
   --scale S               Intero 0..65535, default 1; solo con cumulative-rank
   --include-deviations   Include anche i bit necessari a ricostruire ogni blocco
   --verify               Confronta tutti i blocchi con il decoder gdcompress
@@ -38,6 +39,7 @@ fn run() -> Result<()> {
     let mut network_npz = false;
     let mut cumulative = false;
     let mut adaptive = false;
+    let mut interleaved = false;
     let mut scale = None;
     while let Some(arg) = args.next() {
         match arg.to_str() {
@@ -57,12 +59,13 @@ fn run() -> Result<()> {
                 let value = args
                     .next()
                     .ok_or_else(|| argument_error("Missing representation"))?;
-                if value != "cumulative-rank" && value != "cumulative-rank-adaptive" {
+                if value != "cumulative-rank" && value != "cumulative-rank-adaptive" && value != "cumulative-rank-interleaved" {
                     return Err(argument_error(
-                        "Supported representations: cumulative-rank, cumulative-rank-adaptive",
+                        "Supported representations: cumulative-rank, cumulative-rank-adaptive, cumulative-rank-interleaved",
                     ));
                 }
-                adaptive = value == "cumulative-rank-adaptive";
+                interleaved = value == "cumulative-rank-interleaved";
+                adaptive = value == "cumulative-rank-adaptive" || interleaved;
                 cumulative = true;
             }
             Some("--scale") => {
@@ -105,6 +108,9 @@ fn run() -> Result<()> {
     let scale = scale.unwrap_or(1);
     let input = input.ok_or_else(|| argument_error(HELP))?;
     let output = output.unwrap_or_else(|| {
+        if interleaved {
+            return input.with_extension("cumulative-v4.npz");
+        }
         if adaptive {
             return input.with_extension("cumulative-v3.npz");
         }
@@ -123,7 +129,9 @@ fn run() -> Result<()> {
         return Err(argument_error("This output already exists"));
     }
     if cumulative {
-        let summary = if adaptive {
+        let summary = if interleaved {
+            write_interleaved_cumulative_npz(fs::read(&input)?, &input.to_string_lossy(), options, &output)?
+        } else if adaptive {
             write_adaptive_cumulative_npz(
                 fs::read(&input)?,
                 &input.to_string_lossy(),

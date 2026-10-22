@@ -16,6 +16,7 @@ mod cumulative;
 pub use cumulative::{
     CumulativeU16, extract_adaptive_cumulative_u16, extract_cumulative_u16,
     write_adaptive_cumulative_npz, write_cumulative_npz,
+    extract_interleaved_cumulative_u16, write_interleaved_cumulative_npz,
 };
 
 pub type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -550,9 +551,29 @@ pub fn extract(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> 
 /// lossy machine integer. Every spatial sample then receives its new rank and
 /// the delta attached to that rank.
 pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) -> Result<Value> {
+    extract_network_features_ordered(bytes, source, options, false)
+}
+
+fn extract_network_features_ordered(bytes: Vec<u8>, source: &str, options: Options, interleaved: bool) -> Result<Value> {
     // This is intentionally an in-memory conversion: no generic JSON is written
     // to disk before the smaller, experiment-specific document is produced.
     let extracted = extract(bytes, source, options)?;
+    let original_positions = extracted["base_bit_positions"].as_array()
+        .ok_or_else(|| invalid("Missing base positions"))?;
+    let mut permutation: Vec<usize> = (0..original_positions.len()).collect();
+    if interleaved {
+        if extracted["image"]["channels"] != 3
+            || extracted["image"]["pixel_group_width"] != 1
+            || extracted["image"]["pixel_group_height"] != 1
+            || extracted["chunk_bits"] != 24 {
+            return Err(invalid("V4 requires three 8-bit channels and pixel grouping 1x1"));
+        }
+        let positions = original_positions.iter().map(|p| p.as_u64()
+            .filter(|p| *p < 24).ok_or_else(|| invalid("Invalid V4 bit position")))
+            .collect::<Result<Vec<_>>>()?;
+        permutation.sort_by_key(|&k| (7 - positions[k] % 8, positions[k] / 8));
+    }
+    let ordered_positions: Vec<_> = permutation.iter().map(|&k| original_positions[k].clone()).collect();
     let base_bits = extracted["base_bits"]
         .as_u64()
         .ok_or_else(|| invalid("base_bits is missing."))? as usize;
@@ -590,6 +611,7 @@ pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) 
         {
             return Err(invalid("Invalid base in the dictionary."));
         }
+        let bits = permutation.iter().map(|&k| bits.as_bytes()[k] as char).collect::<String>();
         ordered.push((old_id, bits, frequency));
     }
     ordered.sort_by(|left, right| compare_binary(&left.1, &right.1));
@@ -681,7 +703,9 @@ pub fn extract_network_features(bytes: Vec<u8>, source: &str, options: Options) 
             "name": "sorted-base-rank-and-delta-v1",
             "index_origin": 0,
             "base_value_bit_width": base_bits,
-            "base_bit_positions": extracted["base_bit_positions"].clone(),
+            "base_bit_positions": ordered_positions,
+            "original_base_bit_positions": original_positions,
+            "bit_order": if interleaved { "msb-first-channel-interleaved" } else { "ascending-chunk-position" },
             "base_order": "Ascending lexicographic order of equal-width binary strings; the leftmost character of base_bits is treated as the most-significant bit.",
             "delta_order": "delta_bits[0] is zero; delta_bits[r] = base_bits[r] - base_bits[r - 1]. Deltas are tied to dictionary rank, not to adjacent pixels.",
             "spatial_order": "Row-major: sample i has coordinates y = i // grid_width, x = i % grid_width.",
