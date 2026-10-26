@@ -18,30 +18,41 @@ Then execute it, both for the train and test splits:
     python src/compression/resize-cifar10.py
 
 
-2. CONVERSION RGB TO YCbCr (OPTIONAL)
-For work using the images converted in the YCbCr channels, execute the script for the conversion first. Also here is important to set the 
+2. CONVERSION RGB TO YCbCr or YCoCgR (OPTIONAL)
+For work using the images converted in the YCbCr (or YCoCgR) channels, execute the script for the conversion first. Also here is important to set the 
 right paths and directories in the code, before running it:
 
     python src/dataset_RGB_to_YCbCr.py
+    python src/dataset_RGB_to_YCoCgR.py
 
 
 3. COMPRESSION 
-The compression is obtained through the General Deduplication (GD) approach. The process is iterated over the whole dataset in the script
-**batch_compression.py**. It access the Rust source code that implement the compression. It must be executed both for train and test splits
-See **.\src\compression\batch_compression.py --help** to see all the commands. To execute (example):
+The compression is obtained through the Generalized Deduplication (GD) approach. The process is iterated over the whole dataset in the script
+**batch_compression.py**. It access the Rust source code that implement the compression. It must be executed both for train and test splits.
+To execute (example):
 
     python .\src\compression\batch_compression.py 
-    --input-dir .\data\cifar-10_resized_YCbCr\train 
-    --output-dir data/cifar-10_compressed_1x1_YCbCr/train 
+    --input-dir .\data\cifar-10_resized\train 
+    --output-dir data/cifar-10_compressed_1x1/train 
     --pixel-grouping 1x1
     --resume
 
-4. FEATURES EXTRACTION
-//DESCRIPTION TO WRITE
+See **.\src\compression\batch_compression.py --help** to see all the commands.
 
-python src\batch_network_features.py 
+
+4. FEATURES EXTRACTION
+Once the images has been compressed, the next step is to obtain the relevant features to use as input for the model. It must be executed both for 
+train and test splits. The specific feature extractor depends on the specific version of the algorithm.
+So far, the versions v2,v3,v4 provide a single 16-bit channel, obtained from the bases of the compressed representation.
+To execute (example):
+
+python .\src\batch_network_features.py 
 --version v3 
---input-dir data\cifar-10_compressed_1x1_YCbCr/train 
---output-dir output\v3_cumulative_rank_adaptive_YCbCr\train 
+--input-dir data\cifar-10_compressed_1x1/train 
+--output-dir output\v3_cumulative_rank_adaptive\train 
 --resume
 
+See **.\src\batch_network_features.py  --help** to see all the commands.
+
+
+5. MODEL TRAINING

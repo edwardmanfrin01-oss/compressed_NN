@@ -4,7 +4,7 @@ from timeit import default_timer as timer
 
 
 DATASET_PATH = "data/cifar-10_resized/train"
-OUTPUT_DIR = "data/cifar-10_resized_YCbCr/train"
+OUTPUT_DIR = "data/cifar-10_resized_YCoCgR/train"
 
 
 # output dir
