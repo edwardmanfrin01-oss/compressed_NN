@@ -171,7 +171,7 @@ una nuova compressione.
 ## Campi del JSON
 
 | Campo                         | Significato |
-|---                            |---|
+|  ---                          |     ---
 | `schema`                      | Versione dello schema di esportazione: `igd-extract-v1` |
 | `source`                      | Percorso, dimensione, versioni IGD/EGD e codifiche del file letto |
 | `conventions`                 | Convenzioni esplicite su indici, stringhe e disposizione |
