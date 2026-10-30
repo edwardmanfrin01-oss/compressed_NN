@@ -1,10 +1,10 @@
-# Review del notebook v2/v3
-Modifiche rispetto alla copia ricevuta, con numerazione delle celle da 1.
+# Review of the v2/v3 notebook
+Changes relative to the received copy, with cells numbered from 1.
 
-## Cella 1
+## Cell 1
 ```diff
---- prima
-+++ dopo
+--- before
++++ after
 @@ -2,4 +2,10 @@
  In this notebook, a Image Classification model is implemented, analyzing its performance over a dataset of compressed images. The aim of the experiment is to try to make a prediction model able to classify images, starting from their compressed representation.
  
@@ -19,10 +19,10 @@ Modifiche rispetto alla copia ricevuta, con numerazione delle celle da 1.
 
 ```
 
-## Cella 3
+## Cell 3
 ```diff
---- prima
-+++ dopo
+--- before
++++ after
 @@ -1,14 +1,16 @@
  # 1. The dataset
  
@@ -51,10 +51,10 @@ Modifiche rispetto alla copia ricevuta, con numerazione delle celle da 1.
 
 ```
 
-## Cella 5
+## Cell 5
 ```diff
---- prima
-+++ dopo
+--- before
++++ after
 @@ -8,7 +8,18 @@
  VERSION = "v3"
  SCALE = 1 if VERSION == "v2" else None # Set SCALE value only if v2 is selected
@@ -89,10 +89,10 @@ Modifiche rispetto alla copia ricevuta, con numerazione delle celle da 1.
 
 ```
 
-## Cella 7
+## Cell 7
 ```diff
---- prima
-+++ dopo
+--- before
++++ after
 @@ -1,2 +1,16 @@
  ### 1.2 Upload all the dataset into variables
 -The class `CumulativeDataset()` allows to obtain the pairs (image,label) merging the information from the compressed images and the json containing the label details+The class `CumulativeDataset()` allows to obtain the pairs (image,label) merging the information from the compressed images and the json containing the label details
@@ -113,10 +113,10 @@ Modifiche rispetto alla copia ricevuta, con numerazione delle celle da 1.
 
 ```
 
-## Cella 8
+## Cell 8
 ```diff
---- prima
-+++ dopo
+--- before
++++ after
 @@ -2,6 +2,28 @@
  import numpy as np
  import torch
@@ -162,10 +162,10 @@ Modifiche rispetto alla copia ricevuta, con numerazione delle celle da 1.
 
 ```
 
-## Cella 9
+## Cell 9
 ```diff
---- prima
-+++ dopo
+--- before
++++ after
 @@ -38,7 +38,16 @@
      if len(set(filenames)) != len(filenames):
          raise ValueError("Duplicate files in the training manifest.")
@@ -228,10 +228,10 @@ Modifiche rispetto alla copia ricevuta, con numerazione delle celle da 1.
 
 ```
 
-## Cella 20
+## Cell 20
 ```diff
---- prima
-+++ dopo
+--- before
++++ after
 @@ -9,8 +9,11 @@
  checkpoint = None 
  if CHECKPOINT_TO_LOAD is not None:
@@ -249,10 +249,10 @@ Modifiche rispetto alla copia ricevuta, con numerazione delle celle da 1.
 
 ```
 
-## Cella 29
+## Cell 29
 ```diff
---- prima
-+++ dopo
+--- before
++++ after
 @@ -1,5 +1,8 @@
 -# Re-define the optimizer for changing the LR before a new round of epochs (optional)
 -NEW_LR = 0.01
@@ -269,10 +269,10 @@ Modifiche rispetto alla copia ricevuta, con numerazione delle celle da 1.
 
 ```
 
-## Cella 36
+## Cell 36
 ```diff
---- prima
-+++ dopo
+--- before
++++ after
 @@ -10,7 +10,7 @@
  checkpoint_to_save = {
      "schema": f"resnet-single-channel-checkpoint-{VERSION}",

@@ -1,35 +1,36 @@
-# Helper ML
+# ML helpers
 
 - `helper_functions.py`: `train_step`, `test_step`, `summarize_training_time`.
-  `train_step` restituisce loss, accuracy percentuale e training_seconds.
-  Il tempo misura il ciclo dell'epoca (dati, trasferimenti, forward/backward,
-  aggiornamenti); su CUDA sincronizza prima e dopo la misura.
-  `test_step` restituisce loss, accuracy percentuale e confusion_counts come
-  lista di liste (righe vere, colonne predette). Il numero di classi e un argomento.
-  Usare loss scalare media per campione, come CrossEntropyLoss non pesata.
-  Il riepilogo temporale ignora le epoche storiche prive di training_seconds.
-- `models.py`: CustomResNet50 per mappe (in_channels=1) o RGB (3).
-  Di default allena conv1/fc e congela BatchNorm; conv1 e sempre reinizializzata.
+  `train_step` returns loss, percentage accuracy, and training_seconds.
+  Timing covers the epoch loop (data, transfers, forward/backward passes,
+  updates); CUDA is synchronized before and after measurement.
+  `test_step` returns loss, percentage accuracy, and confusion_counts as a
+  list of lists (true classes in rows, predicted classes in columns).
+  The number of classes is an argument. Use a scalar loss averaged per sample,
+  such as unweighted CrossEntropyLoss. The timing summary ignores historical
+  epochs without training_seconds.
+- `models.py`: CustomResNet50 for maps (in_channels=1) or RGB (3).
+  By default, it trains conv1/fc and freezes BatchNorm; conv1 is always
+  reinitialized.
 
-Configurazione: dizionario CONFIG nella cella iniziale di v2v3_ResNet50.ipynb.
-Percorsi e scelte dell'esperimento restano nel notebook; config.py e rimosso.
-Il notebook gestisce ciclo sulle epoche, normalizzazione, grafici e checkpoint;
-usa test_step per la valutazione e normalizza la matrice di confusione per il grafico.
-NEW_LR continua a prevalere sul learning rate iniziale se si esegue quella cella.
+Configuration: the CONFIG dictionary in the initial cell of v2v3_ResNet50.ipynb.
+Paths and experiment choices remain in the notebook; config.py has been removed.
+The notebook manages the epoch loop, normalization, plots, and checkpoints;
+it uses test_step for evaluation and normalizes the confusion matrix for plotting.
+NEW_LR still overrides the initial learning rate if that cell is executed.
 
-Per Colab copiare src/ml_setup nella radice Drive indicata dal notebook, oppure
-impostare SOURCE_ROOT su src di un clone. Riavviare il kernel dopo aver modificato
-i moduli. Anche v0_ResNet50.ipynb usa gli helper e il modello condiviso con in_channels=3.
-La configurazione RGB e i percorsi restano nel suo dizionario CONFIG.
+For Colab, copy src/ml_setup to the Drive root specified by the notebook, or
+set SOURCE_ROOT to the src directory of a clone. Restart the kernel after
+modifying modules. v0_ResNet50.ipynb also uses the shared helpers and model
+with in_channels=3. RGB configuration and paths remain in its CONFIG dictionary.
 
+## Inference
 
-## Inferenza
-
-v0_inference.ipynb e v2v3_inference.ipynb usano CONFIG, CustomResNet50 con
-pretrained=False e test_step(..., return_predictions=True). Versione, classi
-e normalizzazione restano derivate dal checkpoint. Il flag opzionale restituisce
-array NumPy probabilities, targets e predictions nell'ordine del loader;
-il training non li raccoglie. evaluation_seconds misura valutazione e raccolta
-dei risultati, inclusi dati e trasferimenti, escludendo grafici/export.
-Metriche per classe, figure e salvataggio JSON/CSV/NPZ rimangono nei notebook.
-TensorBoard viene aperto manualmente; il suo export rimane opzionale.
+v0_inference.ipynb and v2v3_inference.ipynb use CONFIG, CustomResNet50 with
+pretrained=False, and test_step(..., return_predictions=True). Version, classes,
+and normalization are still derived from the checkpoint. The optional flag
+returns NumPy probabilities, targets, and predictions arrays in loader order;
+training does not collect them. evaluation_seconds measures evaluation and
+result collection, including data and transfers, but excluding plots/exports.
+Per-class metrics, figures, and JSON/CSV/NPZ saving remain in the notebooks.
+TensorBoard is opened manually; its export remains optional.

@@ -6,6 +6,20 @@ that modifying compression will improve classification.
 
 ## Reproduce the existing-file audit
 
+For the size-only baseline (no K report, validation membership or compression
+timings), run:
+
+```powershell
+python src/compression/audit_compression.py --output-dir output/compression_baseline_2026-10-30
+```
+
+This writes per-image sizes and statistics for all images and each dataset
+split, plus a readable `report.md` with the principal results. PNG totals use
+only matched, nonempty PNG files; missing PNGs are listed
+in the summary. RGB totals include every valid IGD. No image is recompressed.
+K columns are omitted when no K report is supplied. The optional K-aware command
+below is reserved for subsequent experiments.
+
 From the repository root, using Python 3.9 or newer (standard library only):
 
 ```powershell

@@ -1,60 +1,61 @@
-# Analisi preliminare: rango + cumulativa dei delta
+# Preliminary analysis: rank + cumulative deltas
 
-## Risultato del 1 ottobre 2026
+## Results from October 1, 2026
 
-Analizzati 24.517 IGD 1x1, zero errori. Gli originali disponibili sono 50.000:
-mancano 25.483 compressioni nella cartella analizzata. L'altra cartella
-`data/cifar-10_compressed` non aggiunge nomi di immagini mancanti.
-Rapporti dettagliati: `output/cumulative_audit_2026-10-01/` (esclusi da Git).
+Analyzed 24,517 1x1 IGDs with zero errors. There are 50,000 available originals:
+25,483 compressed files are missing from the analyzed directory. The other
+directory, `data/cifar-10_compressed`, adds no missing image names.
+Detailed reports: `output/cumulative_audit_2026-10-01/` (excluded from Git).
 
-Numero di basi: minimo 2, mediana 932, percentile 95 circa 5.331,
-percentile 99 circa 14.285, massimo 18.805 in `image_06405.igd`.
+Number of bases: minimum 2, median 932, 95th percentile approximately 5,331,
+99th percentile approximately 14,285, maximum 18,805 in `image_06405.igd`.
 
-| S | Massimo z | Immagini oltre uint16 |
+| S | Maximum z | Images exceeding uint16 |
 |---|---:|---:|
-| 1 | 26.882 | 0 |
-| 2 | 39.953 | 0 |
-| 3 | 45.068 | 0 |
-| 4 | 57.505 | 0 |
-| 5 | 65.074 | 0 |
-| 6 | 76.540 | 23 |
+| 1 | 26,882 | 0 |
+| 2 | 39,953 | 0 |
+| 3 | 45,068 | 0 |
+| 4 | 57,505 | 0 |
+| 5 | 65,074 | 0 |
+| 6 | 76,540 | 23 |
 
-Massimo S intero comune per uint16: 5. Il massimo z a S=5 è in
-`image_14525.igd`, diverso dall'immagine con più basi. Nessun S comune
-per uint8: già a S=0, 18.280 immagini hanno un rango massimo oltre 255.
-Ci sono 2.060 dizionari con gap tutti uguali; non sono automaticamente
-i casi peggiori, perché conta anche il numero di basi.
+Largest common integer S for uint16: 5. The maximum z at S=5 occurs in
+`image_14525.igd`, which differs from the image with the most bases. No common
+S fits uint8: even at S=0, 18,280 images have a maximum rank above 255.
+There are 2,060 dictionaries with equal gaps; these are not automatically
+the worst cases because the number of bases also matters.
 
-Conclusione: è ragionevole provare S=1,2,3 in uint16. S=5 entra nei file
-analizzati ma ha solo 461 livelli di margine; non è una garanzia su nuove
-immagini o sui file mancanti. Il generatore futuro dovrà verificare gli overflow.
-Non sono state generate nuove mappe né avviati addestramenti.
+Conclusion: trying S=1,2,3 with uint16 is reasonable. S=5 fits the analyzed
+files but leaves only 461 levels of headroom; it provides no guarantee for
+new images or missing files. The future generator must check for overflow.
+No new maps were generated and no training was started.
 
-Questa analisi non crea la nuova rappresentazione e non modifica le compressioni.
-Legge tutti gli IGD disponibili nella cartella specificata, un'immagine alla volta.
-I risultati riguardano solo quei file: il confronto dei nomi con le immagini PNG
-segnala la copertura, senza attestare che contenuto e parametri corrispondano.
+This analysis does not create the new representation or modify compressed
+files. It reads every available IGD in the specified directory, one image at
+a time. Results apply only to those files: comparing names against PNG images
+reports coverage without establishing that contents and parameters match.
 
-## Esecuzione dalla radice del progetto
+## Running from the project root
 
 ```powershell
 cargo build --manifest-path src/igd_extract/Cargo.toml --bin analyze_dictionaries --target-dir src/gdcompress/target --release --offline --locked
 python src/analyze_cumulative_dataset.py --output-dir output/cumulative_audit
 ```
 
-La cartella di output deve essere nuova. Opzioni: `--input-dir`, `--original-dir`,
-`--helper`. Default: `data/cifar-10_compressed_pg_1x1` e `data/cifar-10_resized`.
-Il lettore Rust usa i codec originali; Python gestisce scansione e riepilogo.
-Non servono librerie Python esterne. Non vengono creati JSON spaziali intermedi.
+The output directory must be new. Options: `--input-dir`, `--original-dir`,
+`--helper`. Defaults: `data/cifar-10_compressed_pg_1x1` and `data/cifar-10_resized`.
+The Rust reader uses the original codecs; Python handles scanning and summaries.
+No external Python libraries are required. No intermediate spatial JSONs are created.
 
-## Definizione
+## Definition
 
-Le basi complete (costanti reinserite) sono ordinate con la stessa convenzione
-dell'esperimento precedente: posizioni dei bit crescenti, primo carattere trattato
-come MSB per definire il valore numerico. Non è un ordinamento per luminanza RGB.
-Sono supportati gruppi 1x1 e basi fino a 32 bit; altri casi sono riportati come errori.
+Full bases (with constants reinserted) are sorted using the same convention as
+the previous experiment: increasing bit positions, with the first character
+treated as the MSB to define the numerical value. This is not RGB luminance
+ordering. 1x1 groups and bases up to 32 bits are supported; other cases are
+reported as errors.
 
-Per K basi ordinate, si considerano i K-1 gap positivi. Il delta iniziale è zero.
+For K sorted bases, consider the K-1 positive gaps. The initial delta is zero.
 
 ```
 a[j] = log2(1 + delta[j]) / log2(1 + max_delta)
@@ -63,36 +64,36 @@ c_last = sum(q)
 z_max = K - 1 + c_last
 ```
 
-Normalizzazione in float64, somma in interi; nessuna pesatura per frequenza.
-Il massimo S ammissibile è cercato con ricerca binaria, includendo S=0.
-Per un dizionario con una sola base z è sempre zero: S non ha limite finito.
-Gli esiti numerici usano la convenzione di arrotondamento effettiva del codice.
-Non vengono verificati gli ID spaziali: questa è un'analisi dei dizionari,
-non una verifica integrale del decoder.
+Normalization uses float64 and summation uses integers; there is no frequency
+weighting. The largest admissible S is found with binary search, including S=0.
+For a single-base dictionary, z is always zero: S has no finite upper bound.
+Numerical results use the rounding convention actually implemented by the code.
+Spatial IDs are not checked: this analyzes dictionaries rather than fully
+verifying the decoder.
 
 ## Output
 
-- `per_image.jsonl`: K, bit/base, min/max gap, media dei gap log-normalizzati,
-  indicatore di gap uguali, z_max per S=0..16, massimo S per uint8/uint16.
-  La cumulativa finale si ricava come z_max - (K-1).
-- `summary.json`: copertura, errori, distribuzione di K (quantili nearest-rank
-  calcolati con indice arrotondato), immagini peggiori, overflow per S e massimo
-  S comune. Il valore nullo va interpretato con i campi `unbounded` e
-  `impossible_even_at_s0`.
-- `missing_igd.txt`: nomi delle immagini originali senza compressione disponibile.
+- `per_image.jsonl`: K, bits/base, min/max gap, mean log-normalized gap,
+  equal-gap indicator, z_max for S=0..16, maximum S for uint8/uint16.
+  The final cumulative sum is z_max - (K-1).
+- `summary.json`: coverage, errors, K distribution (nearest-rank quantiles
+  calculated with a rounded index), worst-case images, overflow by S, and
+  largest common S. Interpret null using the `unbounded` and
+  `impossible_even_at_s0` fields.
+- `missing_igd.txt`: original image names without an available compressed file.
 
-Il conteggio delle basi include tutte le righe del dizionario memorizzato.
-I limiti sono validi sui file analizzati, non garantiti per immagini future.
-Gli input e gli output di addestramento esistenti restano invariati.
+The base count includes every row in the stored dictionary. Limits apply to
+analyzed files and are not guaranteed for future images. Existing training
+inputs and outputs remain unchanged.
 
-## Verifica
+## Verification
 
 ```powershell
 cargo test --manifest-path src/igd_extract/Cargo.toml --bin analyze_dictionaries --target-dir src/gdcompress/target --release --offline --locked
 ```
 
-Test aritmetici: gap equidistanti, soglia di arrotondamento, impossibilità dovuta
-al rango e dizionario a base unica. Controllo aggiuntivo eseguito su tre IGD in
-`tmp/manual-test`: confronto con i dizionari JSON precedentemente esportati,
-calcolo indipendente in Python di tutti i 17 massimi e verifica che S massimo
-entri in uint16 mentre S+1 lo superi.
+Arithmetic tests: equally spaced gaps, rounding threshold, impossibility due
+to rank, and a single-base dictionary. An additional check was performed on
+three IGDs in `tmp/manual-test`: comparison against previously exported JSON
+dictionaries, independent Python calculation of all 17 maxima, and verification
+that the maximum S fits uint16 while S+1 exceeds it.

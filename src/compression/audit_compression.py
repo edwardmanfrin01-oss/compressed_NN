@@ -59,13 +59,54 @@ def describe(values: list[float]) -> dict | None:
 def summarize(rows: list[dict]) -> dict:
     raw = sum(r["raw_bytes"] for r in rows)
     igd = sum(r["igd_bytes"] for r in rows)
+    paired = [r for r in rows if r.get("png_bytes", 0)]
+    png = sum(r["png_bytes"] for r in paired)
+    paired_igd = sum(r["igd_bytes"] for r in paired)
     return dict(count=len(rows), raw_bytes=raw, igd_bytes=igd,
                 total_saving_raw_pct=100 * (1 - igd / raw) if raw else None,
                 total_raw_to_igd_ratio=raw / igd if igd else None,
                 expanded_vs_raw_count=sum(r["igd_bytes"] > r["raw_bytes"] for r in rows),
+                png_comparison_count=len(paired), png_bytes=png,
+                paired_igd_bytes=paired_igd,
+                total_saving_png_pct=100 * (1 - paired_igd / png) if png else None,
+                total_png_to_igd_ratio=png / paired_igd if paired_igd else None,
+                expanded_vs_png_count=sum(r["igd_bytes"] > r["png_bytes"] for r in paired),
                 metrics={key: describe([r[key] for r in rows if r.get(key) is not None])
                          for key in ("igd_bytes", "saving_raw_pct", "raw_to_igd_ratio",
-                                     "bits_per_pixel", "png_bytes", "saving_png_pct", "K", "base_bits")})
+                                     "bits_per_pixel", "png_bytes", "saving_png_pct", "K", "base_bits")
+                         if any(r.get(key) is not None for r in rows)})
+
+
+def write_readable_report(report: dict, path: Path) -> None:
+    lines = ["# Statistiche della compressione esistente", "",
+             "IGD confrontati con RGB/RGBA grezzo a 8 bit per canale e con i PNG esistenti.",
+             "Risparmio = 100 × (1 − byte IGD / byte di riferimento). Valori negativi indicano espansione.",
+             "I risparmi complessivi sono calcolati sulle somme dei byte.", "",
+             "| Gruppo | Immagini | Risparmio RGB complessivo | Risparmio PNG complessivo | Espansioni RGB | Espansioni PNG |",
+             "|---|---:|---:|---:|---:|---:|"]
+    for name, group in report["groups"].items():
+        png = group["total_saving_png_pct"]
+        png_text = f"{png:.2f}%" if png is not None else "n/d"
+        raw = group["total_saving_raw_pct"]
+        raw_text = f"{raw:.2f}%" if raw is not None else "n/d"
+        lines.append(f"| {name} | {group['count']} | {raw_text} | {png_text} | "
+                     f"{group['expanded_vs_raw_count']} | {group['expanded_vs_png_count']} |")
+    for name, group in report["groups"].items():
+        lines.extend(["", f"## {name}", "",
+                      "| Risparmio (%) | Media | Std popolazione | Min | P05 | Mediana | P95 | P99 | Max |",
+                      "|---|---:|---:|---:|---:|---:|---:|---:|---:|"])
+        for metric, label in (("saving_raw_pct", "RGB grezzo"), ("saving_png_pct", "PNG")):
+            stats = group["metrics"].get(metric)
+            if stats:
+                values = " | ".join(f"{stats[k]:.2f}" for k in
+                                    ("mean", "std_population", "min", "p05", "median", "p95", "p99", "max"))
+                lines.append(f"| {label} | {values} |")
+        lines.extend(["", f"Byte grezzi: {group['raw_bytes']:,}; byte IGD: {group['igd_bytes']:,}.",
+                      f"PNG abbinati e non vuoti: {group['png_comparison_count']:,}."])
+    lines.extend(["", f"PNG mancanti: {len(report['missing_png'])}.",
+                  "Controlli: header IGD e lunghezza del payload; nessuna verifica di ricostruzione.",
+                  "Nessuna ricompressione o misurazione dei tempi di compressione.", ""])
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def main():
@@ -117,7 +158,7 @@ def main():
         row = dict(split=split_name, image_id=path.stem, igd_path=relative.as_posix(),
                    evaluation_partition=None, K=None, base_bits=None,
                    below_k_min=None, png_bytes=None, saving_png_pct=None,
-                   compression_seconds=None, **read_header(path))
+                   **read_header(path))
         if split_name == "train" and memberships:
             if path.stem not in memberships:
                 raise ValueError(f"Missing split membership: {path.stem}")
@@ -140,17 +181,24 @@ def main():
         rows.append(row)
         if index % 10000 == 0:
             print(f"Read {index}/{len(paths)} IGD headers", flush=True)
+    if not args.k_report:
+        for row in rows:
+            for field in ("K", "base_bits", "below_k_min"):
+                row.pop(field)
+    if not args.split_file:
+        for row in rows:
+            row.pop("evaluation_partition")
     groups = {"all": summarize(rows)}
     for split_name in sorted({r["split"] for r in rows}):
         groups[f"split/{split_name}"] = summarize([r for r in rows if r["split"] == split_name])
     for partition in ("training", "validation"):
-        selected = [r for r in rows if r["evaluation_partition"] == partition]
+        selected = [r for r in rows if r.get("evaluation_partition") == partition]
         if selected:
             groups[f"partition/{partition}"] = summarize(selected)
     for group, selected in [("all", rows)] + [
-        (p, [r for r in rows if r["evaluation_partition"] == p]) for p in ("training", "validation")]:
+        (p, [r for r in rows if r.get("evaluation_partition") == p]) for p in ("training", "validation")]:
         for low in (True, False):
-            subset = [r for r in selected if r["below_k_min"] is low]
+            subset = [r for r in selected if r.get("below_k_min") is low]
             if subset:
                 groups[f"{group}/K{'<' if low else '>='}{args.k_min}"] = summarize(subset)
     report = dict(schema="igd-compression-audit-v1", created_utc=datetime.now(timezone.utc).isoformat(),
@@ -170,6 +218,7 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
     (args.output_dir / "summary.json").write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
+    write_readable_report(report, args.output_dir / "report.md")
     print(json.dumps({"output": str(args.output_dir), "all": groups["all"]}, indent=2))
 
 

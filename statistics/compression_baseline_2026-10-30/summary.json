@@ -1,0 +1,276 @@
+{
+  "schema": "igd-compression-audit-v1",
+  "created_utc": "2026-10-30T09:56:22.492035+00:00",
+  "configuration": {
+    "igd_root": "C:\\Users\\Edward\\Desktop\\AARHUS\\data\\cifar-10_compressed_1x1",
+    "original_root": "C:\\Users\\Edward\\Desktop\\AARHUS\\data\\cifar-10_resized",
+    "output_dir": "C:\\Users\\Edward\\Desktop\\AARHUS\\output\\compression_baseline_2026-10-30",
+    "k_report": null,
+    "k_report_split": null,
+    "split_file": null,
+    "k_min": 32
+  },
+  "conventions": {
+    "raw": "width * height * channels bytes, RGB/RGBA uint8 before compression",
+    "saving": "100 * (1 - IGD bytes / reference bytes); negative means expansion",
+    "igd": "Actual file size including headers and all encoded sections",
+    "validation": "Header and payload length only; not a lossless round-trip verification",
+    "k": "Existing report trusted; dimensions checked, no dictionary revalidation",
+    "timing": "Historical compression time unavailable; audit time is not compression time",
+    "percentiles": "Linear interpolation; population standard deviation"
+  },
+  "groups": {
+    "all": {
+
+      "count": 60000,
+      "raw_bytes": 9031680000,
+      "igd_bytes": 6786679971,
+      "total_saving_raw_pct": 24.856948308620318,
+      "total_raw_to_igd_ratio": 1.3307950335941956,
+      "expanded_vs_raw_count": 2592, 
+
+      "png_comparison_count": 60000,
+      "png_bytes": 1946134695,
+      "paired_igd_bytes": 6786679971,
+      "total_saving_png_pct": -248.7261179011045,
+      "total_png_to_igd_ratio": 0.2867579881939301,
+      "expanded_vs_png_count": 60000,
+
+      "metrics": {
+        "igd_bytes": {
+          "count": 60000,
+          "mean": 113111.33285,
+          "std_population": 17030.052717836614,
+          "min": 21139,
+          "p05": 89495.95,
+          "median": 112158.5,
+          "p95": 149051.24999999997,
+          "p99": 151560.0,
+          "max": 165902
+        },
+        "saving_raw_pct": {
+          "count": 60000,
+          "mean": 24.85694830862032,
+          "std_population": 11.31354480085872,
+          "min": -10.213382227891167,
+          "p05": 0.9810467155612244,
+          "median": 25.48994207057823,
+          "p95": 40.545313828656454,
+          "p99": 65.9810799319728,
+          "max": 85.95676551870748
+        },
+        "raw_to_igd_ratio": {
+          "count": 60000,
+          "mean": 1.3681670895673308,
+          "std_population": 0.2735296905970669,
+          "min": 0.9073308338657762,
+          "p05": 1.00990766604135,
+          "median": 1.342100687892505,
+          "p95": 1.6819532057136966,
+          "p99": 2.93954069676613,
+          "max": 7.120866644590567
+        },
+        "bits_per_pixel": {
+          "count": 60000,
+          "mean": 18.03433240593112,
+          "std_population": 2.7152507522060927,
+          "min": 3.3703762755102042,
+          "p05": 14.269124681122449,
+          "median": 17.882413903061224,
+          "p95": 23.7645487882653,
+          "p99": 24.164540816326532,
+          "max": 26.451211734693878
+        },
+        "png_bytes": {
+          "count": 60000,
+          "mean": 32435.57825,
+          "std_population": 7084.186142285054,
+          "min": 3575,
+          "p05": 19368.850000000002,
+          "median": 33167.0,
+          "p95": 42784.049999999996,
+          "p99": 46338.01,
+          "max": 59697
+        },
+        "saving_png_pct": {
+          "count": 60000,
+          "mean": -262.9397906441781,
+          "std_population": 87.18967558344765,
+          "min": -1738.1197937326458,
+          "p05": -433.478729563634,
+          "median": -240.58325872865015,
+          "p95": -171.63802171082492,
+          "p99": -151.73826909166652,
+          "max": -109.1087722468154
+        }
+      }
+    },
+    "split/test": {
+      "count": 10000,
+      "raw_bytes": 1505280000,
+      "igd_bytes": 1131334238,
+      "total_saving_raw_pct": 24.84227266687925,
+      "total_raw_to_igd_ratio": 1.3305351764665678,
+      "expanded_vs_raw_count": 425,
+      "png_comparison_count": 10000,
+      "png_bytes": 324536556,
+      "paired_igd_bytes": 1131334238,
+      "total_saving_png_pct": -248.59993953963078,
+      "total_png_to_igd_ratio": 0.2868617823975022,
+      "expanded_vs_png_count": 10000,
+      "metrics": {
+        "igd_bytes": {
+          "count": 10000,
+          "mean": 113133.4238,
+          "std_population": 17016.534520900357,
+          "min": 25037,
+          "p05": 89190.1,
+          "median": 112371.0,
+          "p95": 148939.75,
+          "p99": 151560.0,
+          "max": 164060
+        },
+        "saving_raw_pct": {
+          "count": 10000,
+          "mean": 24.84227266687925,
+          "std_population": 11.304564280997793,
+          "min": -8.989689625850339,
+          "p05": 1.0551193133503445,
+          "median": 25.34877232142857,
+          "p95": 40.74849861819727,
+          "p99": 65.9810799319728,
+          "max": 83.36721407312925
+        },
+        "raw_to_igd_ratio": {
+          "count": 10000,
+          "mean": 1.3679446680803726,
+          "std_population": 0.27449370712103577,
+          "min": 0.9175179812263806,
+          "p05": 1.0106637084627563,
+          "median": 1.3395626985610167,
+          "p95": 1.6877209611650674,
+          "p99": 2.93954069676613,
+          "max": 6.012221911570875
+        },
+        "bits_per_pixel": {
+          "count": 10000,
+          "mean": 18.03785455994898,
+          "std_population": 2.7130954274394705,
+          "min": 3.9918686224489797,
+          "p05": 14.220360331632653,
+          "median": 17.916294642857142,
+          "p95": 23.746771364795915,
+          "p99": 24.164540816326532,
+          "max": 26.15752551020408
+        },
+        "png_bytes": {
+          "count": 10000,
+          "mean": 32453.6556,
+          "std_population": 7096.758911037393,
+          "min": 4947,
+          "p05": 19270.9,
+          "median": 33184.5,
+          "p95": 42816.54999999999,
+          "p99": 46285.240000000005,
+          "max": 52433
+        },
+        "saving_png_pct": {
+          "count": 10000,
+          "mean": -262.9592282495778,
+          "std_population": 88.30260063672843,
+          "min": -1242.2014854313463,
+          "p05": -430.9465677815172,
+          "median": -241.11615680106507,
+          "p95": -171.8117685721556,
+          "p99": -153.31990635066904,
+          "max": -124.27975890178166
+        }
+      }
+    },
+    "split/train": {
+      "count": 50000,
+      "raw_bytes": 7526400000,
+      "igd_bytes": 5655345733,
+      "total_saving_raw_pct": 24.859883436968534,
+      "total_raw_to_igd_ratio": 1.3308470172003894,
+      "expanded_vs_raw_count": 2167,
+      "png_comparison_count": 50000,
+      "png_bytes": 1621598139,
+      "paired_igd_bytes": 5655345733,
+      "total_saving_png_pct": -248.75137045282463,
+      "total_png_to_igd_ratio": 0.2867372244879162,
+      "expanded_vs_png_count": 50000,
+      "metrics": {
+        "igd_bytes": {
+          "count": 50000,
+          "mean": 113106.91466,
+          "std_population": 17032.751631610703,
+          "min": 21139,
+          "p05": 89585.45,
+          "median": 112109.0,
+          "p95": 149071.15,
+          "p99": 151560.0,
+          "max": 165902
+        },
+        "saving_raw_pct": {
+          "count": 50000,
+          "mean": 24.859883436968538,
+          "std_population": 11.315337765472671,
+          "min": -10.213382227891167,
+          "p05": 0.9678265837585059,
+          "median": 25.522826318027214,
+          "p95": 40.48585645195575,
+          "p99": 65.9810799319728,
+          "max": 85.95676551870748
+        },
+        "raw_to_igd_ratio": {
+          "count": 50000,
+          "mean": 1.3682115738647225,
+          "std_population": 0.27333645758081104,
+          "min": 0.9073308338657762,
+          "p05": 1.009772850098062,
+          "median": 1.3426932717266231,
+          "p95": 1.6802728580122381,
+          "p99": 2.93954069676613,
+          "max": 7.120866644590567
+        },
+        "bits_per_pixel": {
+          "count": 50000,
+          "mean": 18.03362797512755,
+          "std_population": 2.715681063713441,
+          "min": 3.3703762755102042,
+          "p05": 14.283394451530611,
+          "median": 17.874521683673468,
+          "p95": 23.76772161989796,
+          "p99": 24.164540816326532,
+          "max": 26.451211734693878
+        },
+        "png_bytes": {
+          "count": 50000,
+          "mean": 32431.96278,
+          "std_population": 7081.6633724171525,
+          "min": 3575,
+          "p05": 19384.95,
+          "median": 33163.0,
+          "p95": 42776.09999999999,
+          "p99": 46352.020000000004,
+          "max": 59697
+        },
+        "saving_png_pct": {
+          "count": 50000,
+          "mean": -262.93590312309817,
+          "std_population": 86.96538097138071,
+          "min": -1738.1197937326458,
+          "p05": -433.9912600373196,
+          "median": -240.49177555082994,
+          "p95": -171.5727065344179,
+          "p99": -151.48535840275116,
+          "max": -109.1087722468154
+        }
+      }
+    }
+  },
+  "missing_png": [],
+  "compression_timing": null,
+  "audit_elapsed_seconds": 676.8479963999707
+}

@@ -1,4 +1,5 @@
 use argh::FromArgs;
+use gdcompress::compression::base_selection::EnforceMinimumBases;
 use gdcompress::prelude::*;
 use gdcompress::{
     BitDataInfo, BitDataReconstructionInfo, CompressedData, CondensedSamples,
@@ -51,6 +52,10 @@ struct Args {
     /// base-bit counting: precise or approximate (default: precise)
     #[argh(option, default = "String::from(\"precise\")")]
     base_counting: String,
+
+    /// minimum distinct bases for image compression (optional, positive)
+    #[argh(option)]
+    k_min: Option<usize>,
 
     /// encoding strategy: normal, rle, or huffman (default: normal for tabular, huffman for image)
     #[argh(option)]
@@ -568,6 +573,7 @@ fn compress_image(
     encoding: EncodingMode,
     base_compression: bool,
     verbose: bool,
+    k_min: Option<usize>,
 ) -> Result<(), EntroGdError> {
     let total_start = Instant::now();
 
@@ -597,6 +603,7 @@ fn compress_image(
         patience: 5,
         base_bit_impl: base_impl,
     })
+    .then(EnforceMinimumBases { k_min })
     .then(BuildSortedBaseTable {});
 
     let compressed = match encoding {
@@ -1037,6 +1044,14 @@ fn show_analytics(input: &Path, output: &Path, verbose: bool) -> Result<(), Entr
 fn main() {
     let args: Args = argh::from_env();
 
+    if args.k_min.is_some() {
+        let ext = Path::new(&args.input).extension().and_then(|v| v.to_str()).unwrap_or("").to_lowercase();
+        if args.k_min == Some(0) || args.analytics || !IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+            eprintln!("Error: --k-min must be positive and is only valid for image compression");
+            std::process::exit(1);
+        }
+    }
+
     let action = match detect_action(&args) {
         Ok(a) => a,
         Err(e) => {
@@ -1080,6 +1095,7 @@ fn main() {
             encoding,
             base_compression,
             args.verbose,
+            args.k_min,
         ),
 
         Action::DecompressTabular {

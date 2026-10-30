@@ -31,6 +31,15 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(describe([1, 3])["std_population"], 1)
         self.assertEqual(image_id(r"C:\old\image_00001.network.npz"), "image_00001")
 
+    def test_png_aggregation_uses_only_matched_files(self):
+        rows = [dict(raw_bytes=100, igd_bytes=50, png_bytes=25),
+                dict(raw_bytes=100, igd_bytes=10, png_bytes=None)]
+        result = summarize(rows)
+        self.assertEqual(result["png_comparison_count"], 1)
+        self.assertEqual(result["total_saving_png_pct"], -100)
+        self.assertEqual(result["expanded_vs_png_count"], 1)
+        self.assertNotIn("K", result["metrics"])
+
 
 if __name__ == "__main__":
     unittest.main()

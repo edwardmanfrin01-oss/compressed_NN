@@ -1,12 +1,12 @@
-# V4 — ordinamento MSB-first alternato tra canali
+# V4 — MSB-first bit order interleaved across channels
 
-V4 mantiene la formula adattiva di v3: a_r=log2(1+d_r)/log2(1+d_max), q_r=floor(S_i*a_r), z_r=r+sum(q_0..q_r). S_i è il massimo intero ammissibile in uint16 ed è ricalcolato sui nuovi delta. Il primo delta è zero; una sola base produce una mappa zero.
+V4 retains the v3 adaptive formula: a_r=log2(1+d_r)/log2(1+d_max), q_r=floor(S_i*a_r), z_r=r+sum(q_0..q_r). S_i is the largest integer that fits in uint16 and is recalculated using the new deltas. The first delta is zero; a single base produces a zero map.
 
-L'unica modifica alla costruzione delle feature è la permutazione dei bit prima dell'ordinamento numerico del dizionario: 7,15,23,6,14,22,...,0,8,16, filtrando le posizioni selezionate. Gli indici sono zero-based e i byte originali sono LSB-first. Si permutano le colonne delle basi, si riordinano le righe, si ricalcolano rank/delta e si rimappano gli ID spaziali. Numero di basi, frequenze e associazioni tra pixel e basi sono preservati. Sono accettati tre canali da 8 bit e gruppi 1x1.
+The only change to feature construction is the bit permutation before numerically sorting the dictionary: 7,15,23,6,14,22,...,0,8,16, filtered to the selected positions. Indices are zero-based and the original bytes are LSB-first. Base columns are permuted, rows are sorted again, rank/delta are recalculated, and spatial IDs are remapped. The number of bases, frequencies, and pixel-to-base associations are preserved. Three 8-bit channels and 1x1 groups are supported.
 
-La compressione e la conversione colore non cambiano. Nei file di esempio il modello colore è YCoCgR. Non sono necessari nuovi IGD o JSON intermedi su disco. Ogni NPZ contiene z_u16 e metadata.json, inclusi ordine originale/nuovo, modello colore, numero di basi, estremi binari dopo la permutazione, massimo delta, scala e z_max.
+Compression and color conversion are unchanged. The example files use the YCoCgR color model. No new IGDs or intermediate JSON files on disk are required. Each NPZ contains z_u16 and metadata.json, including original/new order, color model, number of bases, binary extrema after permutation, maximum delta, scale, and z_max.
 
-## Uso dalla radice del progetto (PowerShell)
+## Usage from the project root (PowerShell)
 
 ```powershell
 cargo build --release --manifest-path src/igd_extract/Cargo.toml --target-dir src/gdcompress/target --bin igd_extract
@@ -14,15 +14,15 @@ python src/batch_network_features.py --version v4 --input-dir data/cifar-10_comp
 python src/batch_network_features.py --version v4 --input-dir data/cifar-10_compressed_1x1/test --output-dir output/v4_cumulative_rank_interleaved/test
 ```
 
-Adattare i percorsi alle cartelle effettive. Il batch legge gli IGD direttamente nella cartella indicata, senza ricorsione. Aggiungere --verify per controllare i chunk decodificati e --resume per riprendere un'esportazione della stessa versione. Produce scales_v4.csv e summary_v4.jsonl (una riga per immagine) per ogni cartella elaborata; i riepiloghi sono ricostruiti anche in resume e sostituiti solo al termine. Nessun dizionario completo o matrice spaziale viene duplicato nel riepilogo.
+Adjust paths to the actual directories. The batch reads IGDs directly from the specified directory, without recursion. Add --verify to check decoded chunks and --resume to resume an export of the same version. It produces scales_v4.csv and summary_v4.jsonl (one row per image) for each processed directory; summaries are rebuilt even on resume and replaced only upon completion. No full dictionary or spatial matrix is duplicated in the summary.
 
-Per un file singolo: igd_extract INPUT.igd --representation cumulative-rank-interleaved -o OUTPUT.npz.
+For a single file: igd_extract INPUT.igd --representation cumulative-rank-interleaved -o OUTPUT.npz.
 
-I notebook v2v3_ResNet50, valid_v2v3_ResNet50 e v2v3_inference supportano v4. Impostare CONFIG["version"]="v4", scale=None e checkpoint_name=None nel training, mantenendo i manifest di etichette secondo la procedura esistente. Usare un nuovo kernel e statistiche calcolate sul training v4; non riutilizzare statistiche/checkpoint v3. L'architettura del modello non cambia. Il default dei notebook resta v3.
+The v2v3_ResNet50, valid_v2v3_ResNet50, and v2v3_inference notebooks support v4. Set CONFIG["version"]="v4", scale=None, and checkpoint_name=None for training, maintaining label manifests according to the existing procedure. Use a new kernel and statistics calculated on the v4 training set; do not reuse v3 statistics/checkpoints. The model architecture is unchanged. The notebook default remains v3.
 
-## Esperimenti successivi (non implementati)
+## Subsequent experiments (not implemented)
 
-- MSB-first per canale senza alternanza: 7,6,...,0,15,14,...,8,23,22,...,16.
-- Confronto RGB / YCoCgR / YCbCr con trasformazioni esplicite e documentate, evitando di applicare YCoCgR a valori YCbCr impacchettati come RGB.
+- MSB-first within each channel without interleaving: 7,6,...,0,15,14,...,8,23,22,...,16.
+- RGB / YCoCgR / YCbCr comparison with explicit, documented transformations, avoiding applying YCoCgR to YCbCr values packed as RGB.
 
-L'ordine attuale delle versioni precedenti rimane disponibile. Non è stato avviato un nuovo training né esportato l'intero dataset.
+The existing order used by previous versions remains available. No new training has been started and the full dataset has not been exported.

@@ -172,6 +172,54 @@ pub struct SelectBases {
     pub patience: usize,
 }
 
+/// Extend the standard selection only when its exact dictionary is too small.
+/// No compressed-size optimization is performed after reaching the minimum.
+pub struct EnforceMinimumBases {
+    pub k_min: Option<usize>,
+}
+
+impl Filter for EnforceMinimumBases {
+    type Input = BaseSelectionContext;
+    type Output = BaseSelectionContext;
+
+    fn process(&self, mut input: Self::Input) -> Result<Self::Output, EntroGdError> {
+        let Some(k_min) = self.k_min else { return Ok(input) };
+        if k_min == 0 {
+            return Err(EntroGdError::InvalidMetadata {
+                message: "k_min must be positive".to_string(),
+            });
+        }
+        // Rebuild the selected partition exactly, including when the standard
+        // selector used HyperLogLog. Do not use its estimate to enforce a bound.
+        let mut exact = BaseBitGroups::new(input.bit_data.num_rows(), input.bit_data.chunk_size());
+        let constants = merge_constant_bit_positions(&input.constant_bit_polarity);
+        exact.add_constant_bit_positions(&constants);
+        exact.add_bit_positions(&input.bit_data, input.base_bits.get_base_bit_positions());
+        let original_k = exact.get_num_bases();
+        if original_k >= k_min {
+            return Ok(input);
+        }
+        let mut entropy = crate::compression::entropy::calculate_entropy(&input.bit_data);
+        entropy.sort_by(|a, b| a.1.total_cmp(&b.1));
+        for (position, _) in entropy {
+            if exact.get_base_bit_mask()[position] {
+                continue;
+            }
+            exact.add_bit_position(&input.bit_data, position);
+            if exact.get_num_bases() >= k_min {
+                break;
+            }
+        }
+        let achieved = exact.get_num_bases();
+        eprintln!("Minimum bases: requested={k_min}, original={original_k}, achieved={achieved}, reached={}", achieved >= k_min);
+        if achieved < k_min {
+            eprintln!("Minimum bases unreachable: all available bit positions selected; keeping maximum distinction.");
+        }
+        input.base_bits = Box::new(exact);
+        Ok(input)
+    }
+}
+
 pub struct BaseSelectionContext {
     pub bit_data: BitDataSet,
     pub base_bits: Box<dyn BaseBit>,

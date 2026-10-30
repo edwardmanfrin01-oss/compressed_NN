@@ -1,0 +1,165 @@
+{
+  "schema": "cumulative-dictionary-audit-v1",
+  "input_dir": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1",
+  "original_dir": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_resized",
+  "original_count": 50000,
+  "igd_count": 50000,
+  "valid_count": 50000,
+  "errors": [],
+  "missing_igd_count": 0,
+  "extra_igd_count": 0,
+  "complete_for_originals": true,
+  "conventions": {
+    "base_order": "Selected chunk positions ascending; first bit treated as MSB, matching network features",
+    "formula": "q=round_half_up(S*log2(1+delta)/log2(1+max_delta)); zmax=K-1+sum(q)",
+    "scope": "Dictionary only: does not verify spatial sample stream or reconstruct RGB",
+    "precision": "float64 normalization; integer cumulative sum; grouping 1x1, at most 32 base bits"
+  },
+  "bases": {
+    "min": 2,
+    "median": 929,
+    "p95": 4824,
+    "p99": 14147,
+    "max": 18809,
+    "worst_images": [
+      "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_47458.igd"
+    ]
+  },
+  "all_gaps_equal_count": 4328,
+  "limits": {
+    "uint8": {
+      "max_common_s": null,
+      "impossible_even_at_s0": 37112,
+      "limiting_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_00000.igd",
+      "unbounded": false
+    },
+    "uint16": {
+      "max_common_s": 4,
+      "impossible_even_at_s0": 0,
+      "limiting_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "unbounded": false
+    }
+  },
+  "by_s": [
+    {
+      "s": 0,
+      "max_z": 18808,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_47458.igd",
+      "overflow_uint8": 37112,
+      "overflow_uint16": 0
+    },
+    {
+      "s": 1,
+      "max_z": 27971,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 40787,
+      "overflow_uint16": 0
+    },
+    {
+      "s": 2,
+      "max_z": 39953,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_14525.igd",
+      "overflow_uint8": 41409,
+      "overflow_uint16": 0
+    },
+    {
+      "s": 3,
+      "max_z": 46116,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 41975,
+      "overflow_uint16": 0
+    },
+    {
+      "s": 4,
+      "max_z": 59073,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 42078,
+      "overflow_uint16": 0
+    },
+    {
+      "s": 5,
+      "max_z": 67894,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 42185,
+      "overflow_uint16": 1
+    },
+    {
+      "s": 6,
+      "max_z": 77100,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 42529,
+      "overflow_uint16": 43
+    },
+    {
+      "s": 7,
+      "max_z": 87629,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 42817,
+      "overflow_uint16": 200
+    },
+    {
+      "s": 8,
+      "max_z": 97585,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 42971,
+      "overflow_uint16": 449
+    },
+    {
+      "s": 9,
+      "max_z": 107555,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 43031,
+      "overflow_uint16": 684
+    },
+    {
+      "s": 10,
+      "max_z": 116938,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 43064,
+      "overflow_uint16": 867
+    },
+    {
+      "s": 11,
+      "max_z": 125668,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 43159,
+      "overflow_uint16": 1018
+    },
+    {
+      "s": 12,
+      "max_z": 137659,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 43279,
+      "overflow_uint16": 1158
+    },
+    {
+      "s": 13,
+      "max_z": 145439,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 43419,
+      "overflow_uint16": 1256
+    },
+    {
+      "s": 14,
+      "max_z": 157848,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 43554,
+      "overflow_uint16": 1345
+    },
+    {
+      "s": 15,
+      "max_z": 166838,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 43640,
+      "overflow_uint16": 1440
+    },
+    {
+      "s": 16,
+      "max_z": 173731,
+      "worst_image": "C:\\Users\\edward\\CODING_PROJECTS\\AARHUS\\data\\cifar-10_compressed_1x1\\image_48217.igd",
+      "overflow_uint8": 43692,
+      "overflow_uint16": 1556
+    }
+  ],
+  "elapsed_seconds": 626.2399232999887
+}
