@@ -50,7 +50,7 @@ class CustomResNet18(models.ResNet):
             state = weights.get_state_dict(progress=True)
             state = {k: v for k,v in state.items()
                      if not (k.startswith("conv1.") or k.startswith("fc."))}
-            self.load_state_dict(state, strict=False)
+            self.load_state_dict(state, strict=False) # WHAT IS load_state_dict and how this line works?
 
 
 
