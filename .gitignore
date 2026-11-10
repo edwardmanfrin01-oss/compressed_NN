@@ -3,6 +3,7 @@
 /output/
 /runs/
 /tmp/
+/experiments/
 
 # The compression algorithm sources in src/gdcompress are tracked in this repository.
 
