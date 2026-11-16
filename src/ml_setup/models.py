@@ -10,7 +10,7 @@ import torch.nn as nn
 
 class CustomResNet50(models.ResNet):
     def __init__(self, num_classes=10, pretrained=True, *, in_channels=1,
-                 freeze_backbone=True, freeze_batchnorm=True):
+                 freeze_backbone=False, freeze_batchnorm=True):
         super().__init__(models.resnet.Bottleneck, [3, 4, 6, 3], num_classes=num_classes)
         self.freeze_batchnorm = freeze_batchnorm
         self.conv1 = nn.Conv2d(in_channels, out_channels=64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -39,11 +39,10 @@ class CustomResNet50(models.ResNet):
     # Inherit ResNet.forward: it already supports the configured conv1.
 
 
-class CustomResNet50HalfLayer4(CustomResNet50):
+class CustomResNet50_15M(CustomResNet50):
     """ResNet50 with 256 internal channels in each layer4 bottleneck."""
-
     def __init__(self, num_classes=10, *, in_channels=1,
-                 freeze_backbone=False, freeze_batchnorm=False):
+                 freeze_backbone=False, freeze_batchnorm=True):
         super().__init__(num_classes, pretrained=False, in_channels=in_channels,
                          freeze_backbone=freeze_backbone, freeze_batchnorm=freeze_batchnorm)
         for index, block in enumerate(self.layer4):
@@ -66,9 +65,11 @@ class CustomResNet50HalfLayer4(CustomResNet50):
             second_weight = state_dict[prefix + "conv2.weight"]
             third_weight = state_dict[prefix + "conv3.weight"]
             width = block.conv1.out_channels
-            if (first_weight.shape[0] != 2 * width
-                    or second_weight.shape[:2] != (2 * width, 2 * width)
-                    or third_weight.shape[1] != 2 * width):
+
+            # check the original shapes, before shrinking them: 
+            if (first_weight.shape[0] != 2 * width # conv1 should have 512 output channels 
+                    or second_weight.shape[:2] != (2 * width, 2 * width) # conv2 should have 512 input channels and 512 output channels 
+                    or third_weight.shape[1] != 2 * width): # # conv3 should have 512 input channels 
                 raise ValueError("Expected a full-width ResNet50 layer4 checkpoint.")
 
             # Keep filters with the largest L1 norms. Score conv2 after
@@ -125,3 +126,7 @@ class CustomResNet18(models.ResNet):
 
     # Inherit ResNet.forward from the parent class: it already supports the configured conv1
 
+
+model = CustomResNet50_15M()
+
+print(model)
