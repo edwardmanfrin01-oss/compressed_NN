@@ -39,57 +39,74 @@ class CustomResNet50(models.ResNet):
     # Inherit ResNet.forward: it already supports the configured conv1.
 
 
-class CustomResNet50_15M(CustomResNet50):
-    """ResNet50 with 256 internal channels in each layer4 bottleneck."""
+# definition of generic narrowed ResNet models
+class _NarrowCustomResNet50(CustomResNet50):
+    """Share bottleneck narrowing and checkpoint transfer across variants."""
     def __init__(self, num_classes=10, *, in_channels=1,
                  freeze_backbone=False, freeze_batchnorm=True):
         super().__init__(num_classes, pretrained=False, in_channels=in_channels,
                          freeze_backbone=freeze_backbone, freeze_batchnorm=freeze_batchnorm)
-        for index, block in enumerate(self.layer4):
-            # Keep the residual projection, stride, and 2048-channel output.
-            # In TorchVision, base_width=32 halves the internal width.
-            narrow_block = models.resnet.Bottleneck(
-                block.conv1.in_channels, block.conv3.out_channels // block.expansion,
-                stride=block.stride, downsample=block.downsample, base_width=32,
-            )
-            for conv in (narrow_block.conv1, narrow_block.conv2, narrow_block.conv3):
-                nn.init.kaiming_normal_(conv.weight, mode="fan_out", nonlinearity="relu")
-            self.layer4[index] = narrow_block.requires_grad_(not freeze_backbone)
+        for stage_name in self._narrow_stages:
+            stage = getattr(self, stage_name)
+            for index, block in enumerate(stage):
+                # Keep the residual projection, stride, and output width.
+                # In TorchVision, base_width=32 halves the internal width.
+                narrow_block = models.resnet.Bottleneck(
+                    block.conv1.in_channels, block.conv3.out_channels // block.expansion,
+                    stride=block.stride, downsample=block.downsample, base_width=32,
+                )
+                for conv in (narrow_block.conv1, narrow_block.conv2, narrow_block.conv3):
+                    nn.init.kaiming_normal_(conv.weight, mode="fan_out", nonlinearity="relu")
+                stage[index] = narrow_block.requires_grad_(not freeze_backbone)
 
     def load_full_width_state_dict(self, state_dict):
         """Initialize from a trained CustomResNet50 with matching input and classes."""
         narrowed_state = dict(state_dict)
-        for index, block in enumerate(self.layer4):
-            prefix = f"layer4.{index}."
-            first_weight = state_dict[prefix + "conv1.weight"]
-            second_weight = state_dict[prefix + "conv2.weight"]
-            third_weight = state_dict[prefix + "conv3.weight"]
-            width = block.conv1.out_channels
+        for stage_name in self._narrow_stages:
+            for index, block in enumerate(getattr(self, stage_name)):
+                prefix = f"{stage_name}.{index}."
+                first_weight = state_dict[prefix + "conv1.weight"]
+                second_weight = state_dict[prefix + "conv2.weight"]
+                third_weight = state_dict[prefix + "conv3.weight"]
+                width = block.conv1.out_channels
 
-            # check the original shapes, before shrinking them: 
-            if (first_weight.shape[0] != 2 * width # conv1 should have 512 output channels 
-                    or second_weight.shape[:2] != (2 * width, 2 * width) # conv2 should have 512 input channels and 512 output channels 
-                    or third_weight.shape[1] != 2 * width): # # conv3 should have 512 input channels 
-                raise ValueError("Expected a full-width ResNet50 layer4 checkpoint.")
+                # The source must have twice the target's internal width.
+                full_width = 2 * width
+                if (first_weight.shape[0] != full_width
+                        or second_weight.shape[:2] != (full_width, full_width)
+                        or third_weight.shape[1] != full_width):
+                    raise ValueError(f"Expected full-width ResNet50 weights for {stage_name}.{index}.")
 
-            # Keep filters with the largest L1 norms. Score conv2 after
-            # restricting its inputs to the conv1 filters that survived.
-            first_channels = first_weight.abs().sum(dim=(1, 2, 3)).topk(width).indices.sort().values
-            second_inputs = second_weight.index_select(1, first_channels)
-            second_channels = second_inputs.abs().sum(dim=(1, 2, 3)).topk(width).indices.sort().values
+                # Keep filters with the largest L1 norms. Score conv2 after
+                # restricting its inputs to the conv1 filters that survived.
+                first_channels = first_weight.abs().sum(dim=(1, 2, 3)).topk(width).indices.sort().values
+                second_inputs = second_weight.index_select(1, first_channels)
+                second_channels = second_inputs.abs().sum(dim=(1, 2, 3)).topk(width).indices.sort().values
 
-            narrowed_state[prefix + "conv1.weight"] = first_weight.index_select(0, first_channels)
-            narrowed_state[prefix + "conv2.weight"] = second_inputs.index_select(0, second_channels)
-            narrowed_state[prefix + "conv3.weight"] = third_weight.index_select(1, second_channels)
+                narrowed_state[prefix + "conv1.weight"] = first_weight.index_select(0, first_channels)
+                narrowed_state[prefix + "conv2.weight"] = second_inputs.index_select(0, second_channels)
+                narrowed_state[prefix + "conv3.weight"] = third_weight.index_select(1, second_channels)
 
-            # BatchNorm affine parameters and running statistics follow the
-            # selected channels. Scalar batch counters are copied unchanged.
-            for name, channels in (("bn1", first_channels), ("bn2", second_channels)):
-                for field in ("weight", "bias", "running_mean", "running_var"):
-                    key = f"{prefix}{name}.{field}"
-                    narrowed_state[key] = state_dict[key].index_select(0, channels)
+                # BatchNorm affine parameters and running statistics follow the
+                # selected channels. Scalar batch counters are copied unchanged.
+                for name, channels in (("bn1", first_channels), ("bn2", second_channels)):
+                    for field in ("weight", "bias", "running_mean", "running_var"):
+                        key = f"{prefix}{name}.{field}"
+                        narrowed_state[key] = state_dict[key].index_select(0, channels)
 
         return self.load_state_dict(narrowed_state, strict=True)
+
+
+class CustomResNet50_15M(_NarrowCustomResNet50):
+    """ResNet50 with 256 internal channels in each layer4 bottleneck."""
+
+    _narrow_stages = ("layer4",)
+
+
+class CustomResNet50_11M(_NarrowCustomResNet50):
+    """ResNet50 with 128 internal channels in layer3 and 256 in layer4."""
+
+    _narrow_stages = ("layer3", "layer4")
 
 
 # Model: One Channel ResNet18
@@ -127,6 +144,5 @@ class CustomResNet18(models.ResNet):
     # Inherit ResNet.forward from the parent class: it already supports the configured conv1
 
 
-model = CustomResNet50_15M()
-
-print(model)
+#model = CustomResNet50_15M()
+#print(model)
