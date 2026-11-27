@@ -55,6 +55,37 @@ classifier analysis; this script does not open model checkpoints.
 
 ## Timing and the controlled comparison
 
+### Optional NPZ feature storage audit
+
+Add `--npz-root` to inspect the feature archives alongside the IGDs:
+
+```powershell
+python src/compression/audit_compression.py --igd-root data/cifar-10_compressed_1x1_Kmin1024 --npz-root output/v4_Kmin1024 --original-root data/cifar-10_resized --output-dir statistics/compression_Kmin1024_with_npz
+```
+
+Both roots must use the same split layout, such as `train/` and `test/`.
+Archives named `image_XXXXX.npz` or `image_XXXXX.network.npz` match by split
+and image ID; duplicate identities are rejected. Use the matching representation
+and Kmin dataset: identity and dimensions do not establish content provenance.
+
+The CSV adds `npz_bytes`, `tensor_bytes`, `npz_path`, `npz_arrays` (JSON array
+descriptions), and `npz_reduction_raw_pct`. Summaries include matched counts,
+totals, and distributions. Comparisons use raw byte totals for matched images
+only. Missing archives and archives without a matching IGD are listed in JSON.
+Invalid layouts, dimensions, dtypes, and declared NPY lengths raise errors.
+Supported layouts are `z_u16.npy` or the pair `rank_u8.npy`/`delta_u8.npy`.
+Only ZIP directory information and NPY headers are inspected; tensor contents
+and payload CRCs are not verified.
+
+Archive bytes include metadata and ZIP/NPY overhead. Tensor bytes count the
+stored arrays only: a 224x224 uint16 map is 100,352 bytes, independent of Kmin.
+Loading it as float32 would require 200,704 bytes for the array alone; that
+runtime memory is not measured here. Features are a classification
+representation, not a lossless substitute for RGB. Omitting `--npz-root`
+retains the IGD/PNG-only audit. All newly generated Markdown reports use English.
+
+### Compression timing
+
 Existing IGDs do not preserve compression duration, and the old batch wrapper
 does not save per-image durations. File timestamps cannot recover those times.
 `compression_seconds` and `compression_timing` are therefore missing/null.

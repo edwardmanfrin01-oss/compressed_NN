@@ -46,6 +46,8 @@ def parse_args() -> argparse.Namespace:
         help="Skip IGD files that are already present in the output directory.",
     )
     parser.add_argument("--k-min", type=int, help="Optional minimum number of distinct bases.")
+    parser.add_argument("--no-reuse", action="store_true",
+                        help="Compress every PNG from scratch; do not read or copy baseline IGDs. Use fresh output and omit --resume for timing.")
     parser.add_argument("--existing-dir", type=Path,
                         help="Baseline IGD split directory. With --k-min, defaults to data/cifar-10_compressed_1x1/<input split>.")
     parser.add_argument("--base-counts-bin", type=Path,
@@ -59,7 +61,11 @@ def parse_args() -> argparse.Namespace:
         parser.error("--k-min must be positive")
     if args.existing_dir and args.k_min is None:
         parser.error("--existing-dir requires --k-min")
-    if args.k_min is not None and args.existing_dir is None:
+    if args.no_reuse and args.existing_dir is not None:
+        parser.error("--no-reuse cannot be combined with --existing-dir")
+    if args.no_reuse and args.resume:
+        parser.error("--no-reuse cannot be combined with --resume; use fresh output for a complete run")
+    if args.k_min is not None and args.existing_dir is None and not args.no_reuse:
         if args.input_dir.name not in ("train", "test"):
             parser.error("Use --existing-dir for input directories other than train/test")
         args.existing_dir = PROJECT_ROOT / "data/cifar-10_compressed_1x1" / args.input_dir.name
@@ -88,7 +94,7 @@ def main() -> None:
             f"gdcompress executable not found: {args.gdcompress_bin}. "
             "Build it first with cargo build --release."
         )
-    if args.k_min is not None:
+    if args.k_min is not None and not args.no_reuse:
         if not args.existing_dir.is_dir() or not args.base_counts_bin.is_file():
             raise SystemExit("Baseline directory or igd_base_counts executable missing. Build with cargo build --release --bins.")
         if args.output_dir.resolve() == args.existing_dir.resolve():
@@ -97,12 +103,18 @@ def main() -> None:
     image_files = sorted(args.input_dir.glob("*.png"))
     if not image_files:
         raise SystemExit(f"No PNG files found in: {args.input_dir}")
+    if args.no_reuse and args.output_dir.exists() and any(args.output_dir.iterdir()):
+        raise SystemExit("--no-reuse requires a new or empty output directory; existing files are never overwritten.")
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Found {len(image_files)} images; pixel grouping: {args.pixel_grouping}")
     print(f"Output directory: {args.output_dir}")
+    print(f"Kmin: {args.k_min}; baseline reuse: {not args.no_reuse and args.k_min is not None}")
+    # End-to-end batch wall time: helper startup/cleanup, PNG loading, process
+    # startup, compression, IGD writing, progress output, and action logging.
+    batch_start = time.perf_counter()
     helper = None
-    if args.k_min is not None:
+    if args.k_min is not None and not args.no_reuse:
         helper = subprocess.Popen([str(args.base_counts_bin)], stdin=subprocess.PIPE,
                                   stdout=subprocess.PIPE, text=True, encoding="utf-8")
 
@@ -113,6 +125,9 @@ def main() -> None:
             helper.stdin.close()
             helper.stdout.close()
             helper.wait()
+    elapsed = time.perf_counter() - batch_start
+    print(f"Total batch wall time: {elapsed:.3f} seconds ({elapsed / 60:.3f} minutes)", flush=True)
+    print("Includes processing and file I/O; excludes feature extraction and training.", flush=True)
 
 
 def process_images(args, image_files, helper):
@@ -156,7 +171,7 @@ def process_images(args, image_files, helper):
             writer.writerow([image_path.name, action, original_k, achieved, args.k_min,
                              achieved >= args.k_min if achieved is not None else ""])
             stream.flush()
-            if index % 500 == 0 or index == len(image_files):
+            if index % 2000 == 0 or index == len(image_files):
                 print(f"Processed {index}/{len(image_files)} images", flush=True)
     print(f"Compressed: {compressed}; copied: {copied}; skipped: {skipped}")
     print(f"Action report: {log_path}")
